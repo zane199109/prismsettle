@@ -1,0 +1,37 @@
+# 阶段1：构建阶段（使用官方Go镜像，隔离编译环境） phrase1: build stage with official Go image for isolated build environment
+FROM golang:1.21-alpine AS builder
+WORKDIR /app
+
+# 安装编译依赖（git用于拉取Go模块，alpine基础镜像无git） install build dependencies (git for fetching Go modules, alpine base image lacks git)
+RUN apk add --no-cache git
+
+# 复制依赖文件（先复制go.mod/go.sum，利用Docker缓存）copy dependency files (copy go.mod/go.sum first to leverage Docker cache)
+COPY go.mod go.sum ./
+RUN go mod download
+
+# 复制所有代码 copy all source code
+COPY . .
+
+# 编译Go程序（静态编译，无动态链接库依赖） compile Go program (static compilation, no dynamic library dependency)
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o /web3-offchain ./cmd/main.go
+
+# 阶段2：运行阶段（使用极简镜像，减少攻击面） phrase2: runtime stage with minimal image to reduce attack surface
+FROM alpine:3.18 
+WORKDIR /app
+
+# 安装基础工具（用于排查问题，可选） install basic tools (for troubleshooting, optional)
+RUN apk add --no-cache ca-certificates tzdata
+ENV TZ=Asia/Shanghai
+
+# 从构建阶段复制编译好的程序  copy the compiled binary from the builder stage
+COPY --from=builder /web3-offchain ./
+
+# 非root用户运行（安全最佳实践） run as non-root user (security best practice)
+RUN adduser -D -H appuser
+USER appuser
+
+# 暴露端口（根据实际API端口调整） expose port (adjust according to actual API port)
+EXPOSE 9527
+
+# 启动程序
+CMD ["./web3-offchain", "-config", "./config/prod.yaml"]

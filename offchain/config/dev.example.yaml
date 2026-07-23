@@ -1,0 +1,35 @@
+# ============================================
+# web3-offchain — Development Config Example
+# ============================================
+# Copy this file to dev.yaml and fill in your credentials.
+# Never commit dev.yaml with real secrets.
+# ============================================
+
+# Service configuration
+server:
+  port: 8080
+  mode: "debug"
+
+# PostgreSQL
+postgres:
+  host: "127.0.0.1"
+  port: 5432
+  user: "postgres"
+  password: "CHANGE_ME_your_pg_password"
+  dbname: "web3_offchain_db"
+  max_conns: 20
+  min_conns: 5
+
+# Redis
+redis:
+  host: "127.0.0.1"
+  port: 6379
+  password: "CHANGE_ME_your_redis_password"
+  db: 0
+  pool_size: 10
+  timeout: 5
+
+# Web3 / EVM
+web3:
+  rpc_url: "https://sepolia.infura.io/v3/CHANGE_ME_your_infura_key"
+  chain_id: 11155111

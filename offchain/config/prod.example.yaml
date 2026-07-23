@@ -1,0 +1,167 @@
+# ============================================
+# PrismSettle offchain — Production Config Example
+# ============================================
+# Copy this file to prod.yaml and fill in your credentials.
+# Never commit prod.yaml with real secrets.
+#
+# Target chain: Monad testnet (chain_id 10143).
+# Contracts:   PrismSettleRegistry + PrismSettleJob + ArbitrationHook
+#              (deployed via contracts/scripts/Deploy.s.sol).
+# ============================================
+
+env: "prod"
+server:
+  port: "9527"
+  mode: "release"        # Production: release. Development: debug
+  log_path: "./logs"
+  read_timeout: 30
+  write_timeout: 30
+  idle_timeout: 120
+  shutdown_listener_timeout: 20
+  shutdown_httpserver_timeout: 20
+
+rate_limit:
+  per_minute: 60
+  daily_limit: 10000
+
+auth:
+  tokens: ["CHANGE_ME_your_api_token_1", "CHANGE_ME_your_api_token_2"]
+
+postgres:
+  host: "127.0.0.1"
+  port: "5432"
+  user: "postgres"
+  password: "CHANGE_ME_your_pg_password"
+  dbname: "web3_offchain_db"
+  ssl_mode: disable
+  max_idle_conns: 10
+  max_open_conns: 50
+  conn_max_lifetime: 3600s
+
+redis:
+  host: "127.0.0.1"
+  port: "6379"
+  password: "CHANGE_ME_your_redis_password"
+  db: 0
+  max_retries: 3
+  min_retry_backoff: 100ms
+  max_retry_backoff: 1s
+  idle_timeout: 5m
+  dial_timeout: 5s
+  read_timeout: 3s
+  write_timeout: 3s
+
+# Web3 — PrismSettle 三合约监听（同链不同合约，各自独立 goroutine）
+# Monad testnet RPC: https://testnet-rpc.monad.xyz (chain_id 10143)
+web3:
+  chains:
+    # PrismSettleRegistry — 声誉注册表（submitValidation / aggregateEpoch）
+    - chain_name: "prismsettle_registry"
+      chain_type: "evm"
+      rpc_urls:
+        - "https://testnet-rpc.monad.xyz"
+      abi_type: "erc20"
+      contract_addr: "CHANGE_ME_registry_contract_address"
+      contract_parser: "PrismSettle"
+      start_block: 0
+      confirmations: 5
+      decimals: 18
+      workers: 2
+      batch_size_db: 100
+      batch_size_sync: 50
+      sync_interval: 1000
+      commit_step: 10
+      timeout: 20
+      block_cache_size: 2000
+      reorg_min_depth: 12
+      task_queue_size: 1000
+      task_backpressure_seconds: 30
+      task_send_retry_ms: 100
+      block_number_retry_seconds: 5
+      permanent_failure_sleep_seconds: 10
+      lock_expiration_seconds: 10
+      max_sync_retries: 3
+      native_symbol: "MON"
+      native_decimals: 18
+
+    # PrismSettleJob — Job 生命周期（Submitted / Disputed / Completed）
+    - chain_name: "prismsettle_job"
+      chain_type: "evm"
+      rpc_urls:
+        - "https://testnet-rpc.monad.xyz"
+      abi_type: "erc20"
+      contract_addr: "CHANGE_ME_job_contract_address"
+      contract_parser: "PrismSettleJob"
+      start_block: 0
+      confirmations: 5
+      decimals: 18
+      workers: 2
+      batch_size_db: 100
+      batch_size_sync: 50
+      sync_interval: 1000
+      commit_step: 10
+      timeout: 20
+      block_cache_size: 2000
+      reorg_min_depth: 12
+      task_queue_size: 1000
+      task_backpressure_seconds: 30
+      task_send_retry_ms: 100
+      block_number_retry_seconds: 5
+      permanent_failure_sleep_seconds: 10
+      lock_expiration_seconds: 10
+      max_sync_retries: 3
+      native_symbol: "MON"
+      native_decimals: 18
+
+    # ArbitrationHook — 仲裁钩子（DisputeRaised / DisputeResolved）
+    - chain_name: "prismsettle_hook"
+      chain_type: "evm"
+      rpc_urls:
+        - "https://testnet-rpc.monad.xyz"
+      abi_type: "erc20"
+      contract_addr: "CHANGE_ME_hook_contract_address"
+      contract_parser: "PrismSettleHook"
+      start_block: 0
+      confirmations: 5
+      decimals: 18
+      workers: 2
+      batch_size_db: 100
+      batch_size_sync: 50
+      sync_interval: 1000
+      commit_step: 10
+      timeout: 20
+      block_cache_size: 2000
+      reorg_min_depth: 12
+      task_queue_size: 1000
+      task_backpressure_seconds: 30
+      task_send_retry_ms: 100
+      block_number_retry_seconds: 5
+      permanent_failure_sleep_seconds: 10
+      lock_expiration_seconds: 10
+      max_sync_retries: 3
+      native_symbol: "MON"
+      native_decimals: 18
+
+# Evaluator + Keeper — Phase 9 P0-A 接线
+# private_key 用于签名 submitValidation / complete / resolveDispute / aggregateEpoch tx
+# （Deploy 脚本会授予 REGISTRY_EVALUATOR_ROLE）。prod 环境必须配置。
+# chain_name 必须与 web3.chains[].chain_name 之一匹配（用于从 DB 读取事件）。
+# 三个 *_addr 字段必须同时设置；任一为空则 bots 不启动（config Validate 会报错）。
+evaluator:
+  private_key: "CHANGE_ME_evaluator_private_key_hex_no_0x"
+  evaluator_address: ""
+  facilitator_address: ""
+  validator_address: ""
+  chain_id: 10143
+  chain_name: "prismsettle_job"
+  rpc_url: "https://testnet-rpc.monad.xyz"
+  registry_addr: "CHANGE_ME_registry_contract_address"
+  job_addr: "CHANGE_ME_job_contract_address"
+  hook_addr: "CHANGE_ME_hook_contract_address"
+  poll_interval: 2
+  batch_size: 20
+  keeper_tick_sec: 30
+
+notify:
+  telegram_token: "CHANGE_ME_telegram_bot_token"
+  chat_id: "CHANGE_ME_chat_id"

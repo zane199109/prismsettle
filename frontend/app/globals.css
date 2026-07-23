@@ -1,0 +1,152 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ─── Design Tokens (ui-ux-pro-max: Fintech/Crypto palette) ─── */
+/* HSL values for shadcn/ui CSS variable system. Dark mode is the default
+   for PrismSettle (Web3 trust layer dashboard). */
+
+:root {
+  /* Dark mode (default) */
+  --background: 222 47% 11%;          /* #0F172A */
+  --foreground: 210 40% 98%;          /* #F8FAFC */
+  --card: 222 47% 13%;                /* slightly lighter than bg */
+  --card-foreground: 210 40% 98%;
+  --popover: 222 47% 13%;
+  --popover-foreground: 210 40% 98%;
+
+  --primary: 38 92% 50%;              /* #F59E0B — gold trust */
+  --primary-foreground: 222 47% 11%;
+  --secondary: 45 96% 61%;            /* #FBBF24 */
+  --secondary-foreground: 222 47% 11%;
+
+  --muted: 217 33% 17%;               /* #1E293B */
+  --muted-foreground: 215 20% 65%;    /* #94A3B8 */
+
+  --accent: 258 90% 66%;              /* #8B5CF6 — purple CTA */
+  --accent-foreground: 210 40% 98%;
+
+  --destructive: 0 84% 60%;           /* #EF4444 */
+  --destructive-foreground: 210 40% 98%;
+
+  --border: 215 25% 27%;              /* #334155 */
+  --input: 215 25% 27%;
+  --ring: 38 92% 50%;                 /* focus ring = gold */
+
+  --radius: 0.75rem;
+
+  /* PrismSettle brand tokens (legacy compatibility) */
+  --trust: #f59e0b;
+}
+
+/* Light mode (for accessibility — not default but available via next-themes) */
+.light {
+  --background: 210 40% 98%;          /* #F8FAFC */
+  --foreground: 222 47% 11%;          /* #0F172A */
+  --card: 0 0% 100%;
+  --card-foreground: 222 47% 11%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222 47% 11%;
+
+  --primary: 38 92% 50%;
+  --primary-foreground: 210 40% 98%;
+  --secondary: 45 96% 61%;
+  --secondary-foreground: 222 47% 11%;
+
+  --muted: 210 40% 96%;
+  --muted-foreground: 215 16% 47%;
+
+  --accent: 258 90% 66%;
+  --accent-foreground: 210 40% 98%;
+
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 210 40% 98%;
+
+  --border: 214 32% 91%;
+  --input: 214 32% 91%;
+  --ring: 38 92% 50%;
+}
+
+/* ─── Base Styles ─── */
+
+body {
+  color: hsl(var(--foreground));
+  background: hsl(var(--background));
+  font-family: var(--font-exo2), -apple-system, BlinkMacSystemFont, "Segoe UI",
+    Roboto, sans-serif;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-orbitron), -apple-system, BlinkMacSystemFont,
+    "Segoe UI", Roboto, sans-serif;
+}
+
+/* Smooth scroll for anchor navigation */
+html {
+  scroll-behavior: smooth;
+}
+
+/* ─── PrismSettle Brand Effects ─── */
+
+.prism-bg {
+  background: radial-gradient(
+      ellipse at top,
+      rgba(124, 58, 237, 0.15),
+      transparent 60%
+    ),
+    radial-gradient(
+      ellipse at bottom,
+      rgba(34, 211, 238, 0.1),
+      transparent 60%
+    ),
+    hsl(var(--background));
+}
+
+.card-glow {
+  background: linear-gradient(
+    135deg,
+    rgba(124, 58, 237, 0.04),
+    rgba(236, 72, 153, 0.04)
+  );
+  border: 1px solid rgba(124, 58, 237, 0.15);
+  box-shadow: 0 0 20px rgba(124, 58, 237, 0.06);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+.card-glow:hover {
+  border-color: rgba(124, 58, 237, 0.35);
+  box-shadow: 0 0 30px rgba(124, 58, 237, 0.15);
+}
+
+/* ─── Accessibility ─── */
+
+/* Visible focus rings for keyboard navigation (WCAG AAA) */
+:focus-visible {
+  outline: 3px solid hsl(var(--ring));
+  outline-offset: 2px;
+}
+
+/* Skip link — visible only on focus */
+.skip-link {
+  position: absolute;
+  top: -100px;
+  left: 0;
+  z-index: 100;
+  padding: 8px 16px;
+  background: hsl(var(--primary));
+  color: hsl(var(--primary-foreground));
+  border-radius: 0 0 8px 0;
+  transition: top 0.2s ease;
+}
+.skip-link:focus {
+  top: 0;
+}
+
+/* ─── Reduced Motion (mandatory WCAG) ─── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

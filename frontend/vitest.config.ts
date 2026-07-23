@@ -1,0 +1,22 @@
+/// <reference types="vitest" />
+import { defineConfig } from "vitest/config";
+import react from "@vitejs/plugin-react";
+import path from "node:path";
+
+// Minimal vitest config for component-level tests.
+// DEV-PLAN §Phase 8 任务 8.9.
+export default defineConfig({
+  plugins: [react()],
+  resolve: {
+    alias: {
+      "@": path.resolve(__dirname, "./"),
+    },
+  },
+  test: {
+    environment: "jsdom",
+    globals: true,
+    setupFiles: ["./vitest.setup.ts"],
+    include: ["__tests__/**/*.test.{ts,tsx}"],
+    css: false,
+  },
+});

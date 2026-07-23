@@ -1,0 +1,96 @@
+# docker-compose.no-dockerfile.yml
+version: '3.8'
+
+networks:
+  web3-offchain-net:
+    driver: bridge
+
+volumes:
+  redis-data:
+  postgres-data:
+  pgadmin-data:
+  redis-commander-data:
+
+services:
+  # Web3 Offchain
+  web3-offchain:
+    build: .
+    container_name: web3-offchain
+    restart: always
+    environment:
+    
+    ports:
+      - "8080:8080"
+    volumes:
+      - ../logs:/app/logs
+      - ./config:/app/config
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - web3-offchain-net
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  # Redis
+  redis:
+    image: redis:7-alpine 
+    container_name: web3-offchain-redis
+    restart: always
+    networks:
+      - web3-offchain-net
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./data/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    # instead of Dockerfile custom config via command/environment variables
+    command: redis-server --requirepass web3_redis_2026 --appendonly yes
+    environment:
+      - TZ=UTC
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  # PostgreSQL
+  postgres:
+    image: postgres:14-alpine  
+    container_name: web3-offchain-postgres
+    restart: always
+    networks:
+      - web3-offchain-net
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d web3_offchain_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    #instead of Dockerfile initialization: use environment variables + manual SQL execution
+    environment:
+      - TZ=UTC
+      - POSTGRES_PASSWORD=root@123456
+      - POSTGRES_USER=postgres
+      - POSTGRES_DB=web3_offchain_db
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "200m"
+        max-file: "5"
+
+
+
+

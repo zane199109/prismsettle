@@ -1,0 +1,31 @@
+# Env files (never commit secrets)
+.env
+.env.local
+.env.production
+.env.*.local
+
+# Config files with secrets (contain RPC keys, DB passwords)
+config/dev.yaml
+config/prod.yaml
+
+# Logs
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+bin/
+dist/
+
+# Local docker-compose backups
+docker-compose copy.yml
+docker-compose*.bak

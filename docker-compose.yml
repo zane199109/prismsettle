@@ -1,0 +1,265 @@
+# PrismSettle docker-compose — full stack orchestration.
+#
+# Services:
+#   - postgres     : primary datastore (chain_events, decision_logs, agents)
+#   - redis        : cache + rate-limit backing store
+#   - anvil        : local dev chain (dev profile only)
+#   - offchain     : indexer + evaluator + keeper + REST API (port 9527)
+#   - agent-defi   : DeFi evaluation agent         (port 9101)
+#   - agent-data   : data-labeling evaluation agent (port 9102)
+#   - agent-trl    : translation evaluation agent   (port 9103)
+#   - agent-eval   : meta evaluation agent          (port 9104)
+#   - frontend     : Next.js dashboard              (port 3000)
+#
+# LLM keys (OPENAI_API_KEY etc.) are injected via env_file (.env), never
+# baked into images. See .env.example.
+#
+# Usage:
+#   cp .env.example .env  # fill in keys
+#   docker compose --profile dev up -d           # with local anvil
+#   docker compose up -d                          # without anvil (use testnet RPC)
+#   docker compose logs -f offchain
+#   docker compose down
+
+version: "3.9"
+
+networks:
+  prismsettle-net:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+
+services:
+  # ---------- Data plane ----------
+  postgres:
+    image: postgres:16-alpine
+    container_name: prismsettle-postgres
+    restart: always
+    networks: [prismsettle-net]
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    environment:
+      TZ: UTC
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-prism@2026}
+      POSTGRES_USER: ${POSTGRES_USER:-prism}
+      POSTGRES_DB: ${POSTGRES_DB:-prismsettle}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-prism} -d ${POSTGRES_DB:-prismsettle}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "3"
+
+  redis:
+    image: redis:7-alpine
+    container_name: prismsettle-redis
+    restart: always
+    networks: [prismsettle-net]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # ---------- Local dev chain (optional, dev profile only) ----------
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:latest
+    container_name: prismsettle-anvil
+    profiles: ["dev"]
+    networks: [prismsettle-net]
+    ports:
+      - "8545:8545"
+    # Anvil with deterministic seed + 1s block time. The 10 default accounts
+    # each start with 10000 ETH — enough for deployment + load tests.
+    entrypoint: ["anvil", "--host", "0.0.0.0", "--block-time", "1", "--accounts", "10", "--balance", "10000"]
+    healthcheck:
+      test: ["CMD", "cast", "block-number", "--rpc-url", "http://127.0.0.1:8545"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # ---------- Indexer + Evaluator + Keeper + REST API ----------
+  offchain:
+    build:
+      context: ./offchain
+      dockerfile: Dockerfile
+    image: prismsettle/offchain:latest
+    container_name: prismsettle-offchain
+    restart: always
+    networks: [prismsettle-net]
+    ports:
+      - "9527:9527"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      TZ: UTC
+      # Database DSN — must match postgres service above.
+      PRISM_DB_DSN: "postgres://${POSTGRES_USER:-prism}:${POSTGRES_PASSWORD:-prism@2026}@postgres:5432/${POSTGRES_DB:-prismsettle}?sslmode=disable"
+      # Redis URL for rate-limit + cache.
+      PRISM_REDIS_URL: "redis://redis:6379/0"
+      # Chain RPC — defaults to local anvil; override in .env for testnet.
+      PRISM_RPC_URL: ${PRISM_RPC_URL:-http://anvil:8545}
+      # Evaluator + Keeper signing key (no 0x prefix). Load from .env.
+      PRISM_EVALUATOR_KEY: ${PRISM_EVALUATOR_KEY:-}
+      PRISM_KEEPER_KEY: ${PRISM_KEEPER_KEY:-}
+    env_file:
+      - .env
+    volumes:
+      - ./offchain/config:/app/config:ro
+      - ./logs/offchain:/app/logs
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+  # ---------- 4 Agent services (one per evaluation domain) ----------
+  # Each runs the same offchain image with `agent serve --agent <name>`.
+  # They share the LLM API key from .env (OPENAI_API_KEY etc.).
+
+  agent-defi:
+    image: prismsettle/offchain:latest
+    container_name: prismsettle-agent-defi
+    restart: always
+    networks: [prismsettle-net]
+    ports:
+      - "9101:9101"
+    depends_on:
+      - offchain
+    environment:
+      TZ: UTC
+      AGENT_NAME: defi
+      AGENT_PORT: "9101"
+    env_file:
+      - .env
+    volumes:
+      - ./offchain/config:/app/config:ro
+    # Override ENTRYPOINT to run the agent binary with --agent flag.
+    entrypoint: ["/app/prismsettle", "agent", "--agent", "defi", "--config", "/app/config/agents.yaml"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  agent-data:
+    image: prismsettle/offchain:latest
+    container_name: prismsettle-agent-data
+    restart: always
+    networks: [prismsettle-net]
+    ports:
+      - "9102:9102"
+    depends_on:
+      - offchain
+    environment:
+      TZ: UTC
+      AGENT_NAME: data_labeling
+      AGENT_PORT: "9102"
+    env_file:
+      - .env
+    volumes:
+      - ./offchain/config:/app/config:ro
+    entrypoint: ["/app/prismsettle", "agent", "--agent", "data_labeling", "--config", "/app/config/agents.yaml"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  agent-trl:
+    image: prismsettle/offchain:latest
+    container_name: prismsettle-agent-trl
+    restart: always
+    networks: [prismsettle-net]
+    ports:
+      - "9103:9103"
+    depends_on:
+      - offchain
+    environment:
+      TZ: UTC
+      AGENT_NAME: translation
+      AGENT_PORT: "9103"
+    env_file:
+      - .env
+    volumes:
+      - ./offchain/config:/app/config:ro
+    entrypoint: ["/app/prismsettle", "agent", "--agent", "translation", "--config", "/app/config/agents.yaml"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  agent-eval:
+    image: prismsettle/offchain:latest
+    container_name: prismsettle-agent-eval
+    restart: always
+    networks: [prismsettle-net]
+    ports:
+      - "9104:9104"
+    depends_on:
+      - offchain
+    environment:
+      TZ: UTC
+      AGENT_NAME: eval
+      AGENT_PORT: "9104"
+    env_file:
+      - .env
+    volumes:
+      - ./offchain/config:/app/config:ro
+    entrypoint: ["/app/prismsettle", "agent", "--agent", "eval", "--config", "/app/config/agents.yaml"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # ---------- Frontend dashboard ----------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    image: prismsettle/frontend:latest
+    container_name: prismsettle-frontend
+    restart: always
+    networks: [prismsettle-net]
+    ports:
+      - "3000:3000"
+    depends_on:
+      - offchain
+    environment:
+      TZ: UTC
+      # Server-side API proxy target (Next.js rewrites /api/* → offchain).
+      NEXT_PUBLIC_API_BASE_URL: http://offchain:9527
+      # Monad testnet RPC + contract addresses for frontend wallet interactions.
+      NEXT_PUBLIC_RPC_URL: ${NEXT_PUBLIC_RPC_URL:-https://testnet-rpc.monad.xyz}
+      NEXT_PUBLIC_REGISTRY_ADDRESS: ${NEXT_PUBLIC_REGISTRY_ADDRESS:-}
+      NEXT_PUBLIC_JOB_CONTRACT_ADDRESS: ${NEXT_PUBLIC_JOB_CONTRACT_ADDRESS:-}
+      NEXT_PUBLIC_HOOK_CONTRACT_ADDRESS: ${NEXT_PUBLIC_HOOK_CONTRACT_ADDRESS:-}
+      NEXT_PUBLIC_PAYMENT_TOKEN_ADDRESS: ${NEXT_PUBLIC_PAYMENT_TOKEN_ADDRESS:-}
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"

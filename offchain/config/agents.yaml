@@ -1,0 +1,61 @@
+# PrismSettle Agent services configuration (Phase 5).
+#
+# Each agent is a standalone HTTP server. The LLM provider config is shared
+# under `llm`; per-agent `model` overrides the default when set.
+#
+# API keys are NEVER stored in this file. They live in the env var named by
+# `llm.api_key_env` (e.g. OPENAI_API_KEY). For dev, copy .env.example to .env
+# and fill in the key. For prod, inject via Docker secret / env var.
+#
+# SIGHUP triggers a hot-reload of this file plus the API key env var, so key
+# rotation works without restart.
+
+llm:
+  base_url: "https://api.openai.com/v1"
+  api_key_env: "OPENAI_API_KEY"
+  model: "gpt-4o-mini"
+  timeout_sec: 30
+
+# DeFi analysis agent: input = market data, output = arbitrage opportunity
+# analysis. (FR-AP01/02/04)
+defi:
+  port: 8001
+  endpoint: "http://localhost:8001"
+  model: ""  # inherit from llm.model
+  system_prompt: |
+    You are a DeFi market analysis agent. Given market data (prices, pools,
+    liquidity), identify arbitrage opportunities and explain the trade path.
+    Respond concisely in JSON: {"opportunity": bool, "path": [...], "est_apr": "x%", "rationale": "..."}.
+
+# Data labeling agent: input = sample to label, output = label + confidence.
+data_labeling:
+  port: 8002
+  endpoint: "http://localhost:8002"
+  model: ""
+  system_prompt: |
+    You are a data labeling agent. Given an unlabeled sample, produce a label
+    and a confidence score. Respond in JSON: {"label": "...", "confidence": 0.0-1.0, "rationale": "..."}.
+
+# Translation agent: input = source text, output = target-language translation.
+translation:
+  port: 8003
+  endpoint: "http://localhost:8003"
+  model: ""
+  system_prompt: |
+    You are a translation agent. Translate the input text to English (or to
+    the language prefixed with "to:<lang>:" if present). Return only the
+    translated text, no commentary.
+
+# Evaluation agent: input = {deliverable_hash, job_id, job_metadata}, output =
+# {score: uint96 in [0,1e18], reason: string}. Same input must yield the same
+# score (variance < 0.05). (FR-E14)
+eval:
+  port: 8004
+  endpoint: "http://localhost:8004"
+  model: "gpt-4o-mini"
+  system_prompt: |
+    You are an evaluation agent for deliverable quality. Score the deliverable
+    on a 0..1e18 scale (1e18 = perfect). Be deterministic: identical inputs
+    must yield identical scores. Respond ONLY in JSON:
+    {"score": <integer 0..1000000000000000000>, "reason": "<=200 chars"}.
+  registry_address: "0xRegistryAddress"  # set to deployed Registry addr

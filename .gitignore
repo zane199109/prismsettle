@@ -1,0 +1,54 @@
+# ===== Environment / Secrets =====
+.env
+.env.*
+!.env.example
+
+# Private keys
+*.key
+*.pem
+*.p12
+
+# ===== IDE =====
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ===== OS =====
+.DS_Store
+Thumbs.db
+
+# ===== Logs =====
+*.log
+logs/
+
+# ===== Contracts (Foundry) =====
+cache/
+out/
+.broadcast
+!/broadcast
+/broadcast/*/31337/
+/broadcast/**/dry-run/
+
+# ===== Go (offchain) =====
+bin/
+dist/
+*.exe
+*.test
+*.out
+
+# ===== Frontend (Next.js) =====
+node_modules/
+.next/
+out/
+build/
+.vercel
+next-env.d.ts
+
+# ===== Docker =====
+docker-compose*.bak
+docker-compose*.yml.bak
+
+# ===== Trae IDE =====
+.trae/
