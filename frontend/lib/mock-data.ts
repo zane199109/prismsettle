@@ -599,3 +599,30 @@ export function getLiveAgentCount(): number {
   const drift = Math.floor(Date.now() / 30000) % 3;
   return MOCK_AGENTS.length + (drift === 2 ? 1 : 0);
 }
+
+// ---------------------------------------------------------------------------
+// withMockFallback — reduces boilerplate in hooks that try the API first and
+// fall back to mock data. Every hook that follows this pattern should use it.
+// ---------------------------------------------------------------------------
+
+export interface WithMockFallbackOpts<T> {
+  // The actual API call. Return null/undefined to trigger fallback.
+  apiCall: () => Promise<T | null | undefined>;
+  // Called when apiCall returns null/undefined or throws.
+  mockFallback: () => T;
+  // Optional: additional validation of the API response.
+  isValid?: (res: T) => boolean;
+}
+
+export async function withMockFallback<T>(
+  opts: WithMockFallbackOpts<T>,
+): Promise<T> {
+  try {
+    const res = await opts.apiCall();
+    if (res == null) return opts.mockFallback();
+    if (opts.isValid && !opts.isValid(res)) return opts.mockFallback();
+    return res;
+  } catch {
+    return opts.mockFallback();
+  }
+}

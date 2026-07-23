@@ -15,6 +15,7 @@ import type { ChainEvent, Paginated } from "@/lib/types";
 export interface UseEventsOptions {
   chainName?: string;
   eventType?: string; // e.g. "PRISM_STAKED"; "" = all
+  to?: string; // Filter by receiver address/ID (client-side + mock fallback)
   page?: number;
   size?: number;
   intervalMs?: number;
@@ -27,24 +28,31 @@ export function useEvents(opts: UseEventsOptions = {}) {
   const {
     chainName,
     eventType,
+    to,
     page = 1,
     size = 50,
     intervalMs = 8000,
     userAddress,
   } = opts;
 
-  const key = `events:${chainName ?? "all"}:${eventType ?? "all"}:${page}:${size}`;
+  const key = `events:${chainName ?? "all"}:${eventType ?? "all"}:${to ?? "all"}:${page}:${size}`;
   const { data, error, isValidating, mutate } = usePoll<Paginated<ChainEvent>>(
     key,
     async () => {
       try {
         const res = await getEvents({ chain_name: chainName, event_type: eventType, page, size });
-        if (res.items && res.items.length > 0) return res;
+        if (res.items && res.items.length > 0) {
+          // Apply client-side `to` filter when mocked events are not needed.
+          const items = to
+            ? res.items.filter((e) => e.to?.toLowerCase() === to.toLowerCase())
+            : res.items;
+          if (items.length > 0) return { ...res, items };
+        }
         // Empty page — fall back to mock so the UI is never blank.
-        const mock = getMockEvents(buildMockOpts(eventType, userAddress, size));
+        const mock = getMockEvents(buildMockOpts(eventType, userAddress, to, size));
         return { items: mock.items, total: mock.total, page, size };
       } catch {
-        const mock = getMockEvents(buildMockOpts(eventType, userAddress, size));
+        const mock = getMockEvents(buildMockOpts(eventType, userAddress, to, size));
         return { items: mock.items, total: mock.total, page, size };
       }
     },
@@ -69,9 +77,10 @@ export function useEvents(opts: UseEventsOptions = {}) {
 function buildMockOpts(
   eventType: string | undefined,
   userAddress: string | undefined,
+  to: string | undefined,
   size: number,
 ): Parameters<typeof getMockEvents>[0] {
-  const opts: Parameters<typeof getMockEvents>[0] = { eventType, size };
+  const opts: Parameters<typeof getMockEvents>[0] = { eventType, size, to };
   if (userAddress) {
     if (eventType === "PRISM_SLASHED") {
       opts.overrideTo = userAddress;

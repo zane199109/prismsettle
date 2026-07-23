@@ -27,13 +27,13 @@ export function useAgentDetail(
     enabled ? `agent:${chainName ?? "all"}:${agentId}` : null,
     async () => {
       try {
-        const res = await getAgent(agentId!, chainName);
+        const res = await getAgent(agentId as string, chainName);
         if (res) return res;
-        const mock = getMockAgent(agentId!);
+        const mock = getMockAgent(agentId as string);
         if (mock) return mock;
         throw new Error("agent not found");
       } catch {
-        const mock = getMockAgent(agentId!);
+        const mock = getMockAgent(agentId as string);
         if (mock) return mock;
         throw new Error("agent not found");
       }
@@ -58,32 +58,36 @@ export function useAgentEvents(
     enabled ? `agent-events:${chainName ?? "all"}:${agentId}:${size}` : null,
     async () => {
       try {
-        const res = await listAgentEvents(agentId!, chainName, size);
+        const res = await listAgentEvents(agentId as string, chainName, size);
+        const idLower = (agentId ?? "").toLowerCase();
         const filtered = res.items.filter(
           (e) =>
-            e.from?.toLowerCase().includes(agentId!.toLowerCase()) ||
-            e.to?.toLowerCase().includes(agentId!.toLowerCase()) ||
-            e.extra?.toLowerCase().includes(agentId!.toLowerCase()),
+            e.from?.toLowerCase().includes(idLower) ||
+            e.to?.toLowerCase().includes(idLower) ||
+            e.extra?.toLowerCase().includes(idLower),
         );
         if (filtered.length > 0) {
           return { items: filtered, total: filtered.length, page: 1, size };
         }
         // Fall back to mock events targeting this agent.
-        const mock = getMockEvents({ to: agentId!, size });
+        const mock = getMockEvents({ to: agentId, size });
         return { items: mock.items, total: mock.total, page: 1, size };
       } catch {
-        const mock = getMockEvents({ to: agentId!, size });
+        const mock = getMockEvents({ to: agentId, size });
         return { items: mock.items, total: mock.total, page: 1, size };
       }
     },
     { intervalMs, pauseWhenHidden: true },
   );
-  // Filter to events that mention this agent in `from`/`to`/`extra`.
+  // Client-side filter: backend lacks server-side agent_id filter so we
+  // fetch a page and filter. The fetcher already falls back to mock events
+  // targeting this agent when the backend returns nothing.
+  const id = agentId ?? ""; // guarded by SWR key (null when disabled)
   const filtered = (data?.items ?? []).filter(
-    (e) =>
-      e.from?.toLowerCase().includes(agentId!.toLowerCase()) ||
-      e.to?.toLowerCase().includes(agentId!.toLowerCase()) ||
-      e.extra?.toLowerCase().includes(agentId!.toLowerCase()),
+    (e: ChainEvent) =>
+      e.from?.toLowerCase().includes(id.toLowerCase()) ||
+      e.to?.toLowerCase().includes(id.toLowerCase()) ||
+      e.extra?.toLowerCase().includes(id.toLowerCase()),
   );
   return {
     events: filtered,

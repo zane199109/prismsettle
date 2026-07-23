@@ -32,7 +32,15 @@ import { useAgents } from "@/hooks/useAgents";
 
 function DashboardBody() {
   const { data: shardData } = useShardActivity(undefined, 6000);
-  const { total: agentCount } = useAgents({ size: 1, intervalMs: 15000 });
+  const { agents, total: agentCount } = useAgents({ size: 50, intervalMs: 15000 });
+
+  // Aggregate score: average of all agent scores (1e18-scaled). Falls back
+  // to 0.8e18 when no agents are registered (buy-sell spread default).
+  const aggregateScore = (() => {
+    if (agents.length === 0) return "800000000000000000";
+    const sum = agents.reduce((acc, a) => acc + BigInt(a.score || "0"), 0n);
+    return (sum / BigInt(agents.length)).toString();
+  })();
 
   return (
     <>
@@ -82,7 +90,7 @@ function DashboardBody() {
 
           <div className="card-glow flex items-center justify-center rounded-xl p-8">
             <PrismHologram
-              score={shardData.total > 0 ? "800000000000000000" : "0"}
+              score={aggregateScore}
               size={256}
               label="Aggregate Score"
             />

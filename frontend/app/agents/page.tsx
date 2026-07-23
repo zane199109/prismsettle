@@ -134,7 +134,7 @@ export default function AgentMarketplacePage() {
 
         {/* 8.8: Agent register form (FR-M06) */}
         <Card className="mt-8 border-white/10 bg-prism-surface/40">
-          <details>
+          <details id="register-agent-form">
             <summary className="flex cursor-pointer items-center gap-2 p-5 text-sm font-medium text-white">
               <UserPlus className="h-4 w-4 text-prism-accent" />
               Register a new agent (FR-M06)
@@ -208,8 +208,17 @@ function EmptyState() {
     <Card className="border-dashed border-white/20 bg-prism-surface/30 py-16 text-center">
       <CardContent className="py-0">
         <p className="text-sm text-white/60">No agents registered yet.</p>
-        <Button asChild className="mt-4">
-          <Link href="/jobs/new">Register the first agent →</Link>
+        <Button
+          className="mt-4"
+          onClick={() => {
+            const el = document.getElementById("register-agent-form");
+            if (el) {
+              (el as HTMLDetailsElement).open = true;
+              el.scrollIntoView({ behavior: "smooth" });
+            }
+          }}
+        >
+          Register the first agent →
         </Button>
       </CardContent>
     </Card>

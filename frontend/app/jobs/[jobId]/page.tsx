@@ -21,6 +21,7 @@ import { FundFlowChart } from "@/components/job/FundFlowChart";
 import { FundingPathBadge } from "@/components/job/FundingPathBadge";
 import { useJobStatusPoll } from "@/hooks/useJobStatusPoll";
 import { useJobTimeline } from "@/hooks/useJobTimeline";
+import { useEvents } from "@/hooks/useEvents";
 import {
   JOB_CONTRACT_ADDRESS,
   JOB_ABI,
@@ -43,6 +44,15 @@ function JobDetailBody({ jobId }: { jobId: string }) {
   const agentId = searchParams.get("agent") ?? "";
   const { status, isTerminal } = useJobStatusPoll(jobId);
   const { timeline } = useJobTimeline(jobId);
+
+  // Read on-chain ruling from resolved dispute events (FR-JM06).
+  const { events: disputeEvents } = useEvents({
+    eventType: "PRISM_DISPUTE_RESOLVED",
+    to: jobId,
+    size: 1,
+    intervalMs: 15000,
+  });
+  const resolvedRuling = disputeEvents.length > 0 ? disputeEvents[0].value : null;
 
   const canSubmit = status === "Funded" || status === "Assigned";
   const canDispute = status === "Submitted";
@@ -85,7 +95,7 @@ function JobDetailBody({ jobId }: { jobId: string }) {
 
         {/* Dispute (8.5c, FR-JM05/JM06) */}
         {(canDispute || status === "Disputed" || status === "DisputeResolved") && (
-          <DisputePanel jobId={jobId} status={status ?? ""} />
+          <DisputePanel jobId={jobId} status={status ?? ""} resolvedRuling={resolvedRuling} />
         )}
 
         {/* Fund flow (8.5d, FR-JM04) — reads real on-chain Job state */}
@@ -153,6 +163,10 @@ function FundFlowFromChain({ jobId }: { jobId: string }) {
   // If hook address is non-zero, an ArbitrationHook is attached; we infer
   // the funding path from the absence of x402 receipt data — for the
   // hackathon demo all fundings use the ERC-20 path (empty receipt).
+  // PRD FR-JM04: x402 funding detection. The hackathon demo uses ERC-20
+  // funding path exclusively (x402 facilitator not deployed on Monad testnet
+  // yet — Phase 9.8). Set to true when the receipt data structure changes
+  // to include x402 metadata.
   const usedX402 = false;
 
   return (
@@ -316,7 +330,7 @@ function DeliverableSubmit({ jobId }: { jobId: string }) {
 }
 
 // ---------- 8.5c: Dispute + ruling (FR-JM05/JM06) — real on-chain call ----------
-function DisputePanel({ jobId, status }: { jobId: string; status: string }) {
+function DisputePanel({ jobId, status, resolvedRuling }: { jobId: string; status: string; resolvedRuling: string | null }) {
   const { address, chain } = useAccount();
   const { writeContractAsync } = useWriteContract();
 
@@ -442,7 +456,9 @@ function DisputePanel({ jobId, status }: { jobId: string; status: string }) {
       {isResolved && (
         <div className="space-y-2">
           <div className="rounded-md border border-emerald-500/40 bg-emerald-500/10 p-3 text-sm text-emerald-300">
-            ⚖ Dispute resolved. Ruling: <span className="font-mono">refund</span> (ruling=1)
+            ⚖ Dispute resolved. Ruling:{" "}
+            <span className="font-mono">{resolvedRuling === "2" ? "pay provider" : "refund"}</span>
+            {" "}(ruling={resolvedRuling ?? "?"})
           </div>
           <p className="text-[11px] text-white/40">
             Funds returned to buyer. Agent&apos;s reputation score was slashed.

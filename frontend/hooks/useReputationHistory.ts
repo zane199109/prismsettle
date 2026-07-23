@@ -40,6 +40,9 @@ function toPoint(e: ChainEvent): ReputationPoint {
   if (!e.symbol) {
     if (e.event_type === "PRISM_AGGREGATED") source = 1;
     else if (e.event_type === "PRISM_SLASHED") source = 2;
+    // Console.warn so operators can detect stale parser state during
+    // development — expected until Phase 10 adds symbol to all events.
+    console.warn("useReputationHistory: empty symbol on event %s, inferred source=%d", e.tx_hash?.slice(0, 10), source);
   }
   return {
     score: e.value || "0",

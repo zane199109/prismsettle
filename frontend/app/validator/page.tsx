@@ -10,7 +10,7 @@
 //   withdrawUnstaked()            — withdraw after lock expires
 //   submitValidation(agentId, score, proofHash, jobId, source=0)  — Validator path
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Lock, Unlock, ArrowDownToLine, Loader2, CheckCircle2 } from "lucide-react";
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract } from "wagmi";
 import { monadTestnet } from "wagmi/chains";
@@ -40,7 +40,7 @@ export default function ValidatorConsolePage() {
   const [success, setSuccess] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<`0x${string}` | null>(null);
 
-  const { isLoading: isConfirming } = useWaitForTransactionReceipt({
+  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
     hash: txHash ?? undefined,
   });
 
@@ -52,6 +52,15 @@ export default function ValidatorConsolePage() {
     args: [address ?? "0x0000000000000000000000000000000000000000"],
     query: { enabled: Boolean(address && REGISTRY_ADDRESS) },
   });
+
+  // Refetch on-chain stake info when the transaction confirms, instead of
+  // using a blind setTimeout that could fire before or after confirmation.
+  // Must be placed after useReadContract to avoid TDZ on refetchStake.
+  useEffect(() => {
+    if (isConfirmed) {
+      refetchStake();
+    }
+  }, [isConfirmed, refetchStake]);
 
   // P1-3: Validator earnings tracking (mock). Aggregate this wallet's
   // PRISM_VALIDATION_SUBMITTED events and multiply by a mock unit reward
@@ -143,8 +152,6 @@ export default function ValidatorConsolePage() {
         });
       }
       setTxHash(hash);
-      // Refetch stake info after tx confirmed.
-      setTimeout(() => refetchStake(), 2000);
       setSuccess(`${action} tx sent.`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -152,9 +159,21 @@ export default function ValidatorConsolePage() {
   }
 
   function parseAmount(input: string): bigint | null {
-    // Accept ETH decimal (e.g. "5.0") and convert to wei.
+    // Convert ETH decimal string to wei without floating-point precision loss.
+    // Handles arbitrary decimals by string-splitting on "." instead of
+    // parseFloat, which would lose precision on values like 5.123456789012345678.
     try {
-      const wei = BigInt(Math.floor(parseFloat(input) * 1e18));
+      const trimmed = input.trim();
+      if (trimmed === "") {
+        setError("Amount is required.");
+        return null;
+      }
+      const parts = trimmed.split(".");
+      const intPart = parts[0].replace(/^0+/, "") || "0";
+      let decPart = parts[1] ?? "";
+      if (decPart.length > 18) decPart = decPart.slice(0, 18);
+      decPart = decPart.padEnd(18, "0");
+      const wei = BigInt(intPart + decPart);
       if (wei <= 0n) {
         setError("Amount must be positive.");
         return null;
@@ -182,13 +201,27 @@ export default function ValidatorConsolePage() {
   }
 
   function parseScore(input: string): bigint | null {
-    // Accept decimal in [0, 1] and scale to 1e18 (e.g. 0.85 -> 0.85e18).
-    const f = parseFloat(input);
+    // Accept decimal in [0, 1] and scale to 1e18 without floating-point
+    // precision loss. String-split avoids IEEE 754 rounding from parseFloat.
+    const trimmed = input.trim();
+    const f = parseFloat(trimmed);
     if (isNaN(f) || f < 0 || f > 1) {
       setError("Score must be in [0, 1].");
       return null;
     }
-    return BigInt(Math.floor(f * 1e18));
+    // String-split for exact BigInt conversion.
+    const parts = trimmed.split(".");
+    const intPart = parts[0] || "0";
+    let decPart = parts[1] ?? "";
+    if (decPart.length > 18) decPart = decPart.slice(0, 18);
+    decPart = decPart.padEnd(18, "0");
+    const scale = BigInt(intPart) * 10n ** 18n + BigInt(decPart);
+    // Sanity: 18-decimal BigInt must fit the same [0, 1e18] range as before.
+    if (scale < 0n || scale > 10n ** 18n) {
+      setError("Score out of range.");
+      return null;
+    }
+    return scale;
   }
 
   function parseBytes32(input: string): `0x${string}` | null {

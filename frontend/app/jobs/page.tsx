@@ -167,7 +167,7 @@ export default function JobsListPage() {
                     <TableRow
                       key={job.job_id}
                       className="border-white/10 cursor-pointer"
-                      onClick={() => { window.location.href = `/jobs/${encodeURIComponent(job.job_id)}`; }}
+                      onClick={() => { router.push(`/jobs/${encodeURIComponent(job.job_id)}`); }}
                     >
                       <TableCell className="pl-6 font-mono text-xs text-white">
                         #{job.job_id.slice(0, 10)}…
