@@ -31,7 +31,7 @@ echo ""
 
 # Deploy contracts
 echo "[2/10] Deploying contracts..."
-DEPLOY_OUTPUT=$(forge script script/Deploy.s.sol --rpc-url $RPC --broadcast --legacy 2>&1) || true
+DEPLOY_OUTPUT=$(forge script script/Deploy.s.sol --rpc-url $RPC --broadcast --legacy --private-key $BUYER_KEY 2>&1) || true
 TOKEN_ADDR=$(echo "$DEPLOY_OUTPUT" | grep 'MockERC20:' | grep -oE '0x[0-9a-fA-F]{40}')
 REGISTRY_ADDR=$(echo "$DEPLOY_OUTPUT" | grep 'Registry:' | grep -oE '0x[0-9a-fA-F]{40}')
 JOB_ADDR=$(echo "$DEPLOY_OUTPUT" | grep 'PrismSettleJob:' | grep -oE '0x[0-9a-fA-F]{40}')

@@ -30,11 +30,11 @@ contract Deploy is Script {
 
     // 4 个 Agent 的 metadata（endpointUrl + capabilities，JSON 字符串）
     // 实际生产由 offchain/config/agents.yaml 注入，这里用 dev 默认值
-    string internal constant META_DEFI = '{"endpointUrl":"http://localhost:8001/invoke","capabilities":"defi"}';
-    string internal constant META_LABELING = '{"endpointUrl":"http://localhost:8002/invoke","capabilities":"labeling"}';
+    string internal constant META_DEFI = '{"endpointUrl":"http://localhost:9101/invoke","capabilities":"defi"}';
+    string internal constant META_LABELING = '{"endpointUrl":"http://localhost:9102/invoke","capabilities":"labeling"}';
     string internal constant META_TRANSLATE =
-        '{"endpointUrl":"http://localhost:8003/invoke","capabilities":"translation"}';
-    string internal constant META_EVAL = '{"endpointUrl":"http://localhost:8004/invoke","capabilities":"evaluation"}';
+        '{"endpointUrl":"http://localhost:9103/invoke","capabilities":"translation"}';
+    string internal constant META_EVAL = '{"endpointUrl":"http://localhost:9104/invoke","capabilities":"evaluation"}';
 
     function run() external {
         // 读取环境变量（未设置则回退）

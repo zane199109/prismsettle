@@ -103,6 +103,7 @@ func (p *PrismSettleJobParser) Parse(log types.Log) (any, error) {
 		event.Symbol = common.BytesToAddress(log.Data[:32]).Hex()
 		// hook address (3rd data slot) stored in TokenAddr (FR-JI05)
 		event.TokenAddr = common.BytesToAddress(log.Data[64:96]).Hex()
+		event.Value = "0"
 
 	case EventFundedSig.Hex():
 		// Topics: [sig, jobId]
@@ -130,6 +131,7 @@ func (p *PrismSettleJobParser) Parse(log types.Log) (any, error) {
 		event.EventType = model.TypePrismJobAssigned
 		event.To = agentIDFromTopic(log.Topics[1])
 		event.From = common.BytesToAddress(log.Data[:32]).Hex()
+		event.Value = "0"
 
 	case EventSubmittedSig.Hex():
 		// Topics: [sig, jobId]
@@ -147,6 +149,7 @@ func (p *PrismSettleJobParser) Parse(log types.Log) (any, error) {
 		// proofHash stored in From field (size:96 holds 66-char bytes32 hex, FR-JI04).
 		// Submitted has no From address, so reusing this slot avoids schema growth.
 		event.From = common.BytesToHash(log.Data[32:64]).Hex()
+		event.Value = "0"
 
 	case EventCompletedSig.Hex():
 		// Topics: [sig, jobId]

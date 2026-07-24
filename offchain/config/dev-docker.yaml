@@ -1,0 +1,149 @@
+# PrismSettle dev-docker config — connects Docker containers to local anvil.
+# postgres/redis use Docker service names; RPC goes via host.docker.internal.
+env: "dev"
+server:
+  port: "9527"
+  mode: "debug"
+  log_path: "/app/logs"
+  read_timeout: 30
+  write_timeout: 30
+  idle_timeout: 120
+  shutdown_listener_timeout: 20
+  shutdown_httpserver_timeout: 20
+
+rate_limit:
+  per_minute: 120
+  daily_limit: 100000
+
+auth:
+  tokens: ["dev-token"]
+
+postgres:
+  host: "postgres"
+  port: 5432
+  user: "prism"
+  password: "prism@2026"
+  dbname: "prismsettle"
+  ssl_mode: disable
+  max_idle_conns: 10
+  max_open_conns: 50
+  conn_max_lifetime: 3600s
+
+redis:
+  host: "redis"
+  port: 6379
+  password: ""
+  db: 0
+  max_retries: 3
+  min_retry_backoff: 100ms
+  max_retry_backoff: 1s
+  idle_timeout: 5m
+  dial_timeout: 5s
+  read_timeout: 3s
+  write_timeout: 3s
+
+web3:
+  chains:
+    # PrismSettleRegistry on local anvil
+    - chain_name: "prismsettle_registry"
+      chain_type: "evm"
+      abi_type: "erc20"
+      rpc_urls:
+        - "http://host.docker.internal:8545"
+      contract_addr: "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"
+      contract_parser: PrismSettle
+      start_block: 1
+      confirmations: 0
+      decimals: 18
+      workers: 2
+      batch_size_db: 100
+      batch_size_sync: 50
+      sync_interval: 1000
+      commit_step: 10
+      timeout: 20
+      block_cache_size: 1024
+      reorg_min_depth: 64
+      task_queue_size: 100
+      task_backpressure_seconds: 30
+      task_send_retry_ms: 100
+      block_number_retry_seconds: 5
+      permanent_failure_sleep_seconds: 30
+      lock_expiration_seconds: 60
+      max_sync_retries: 5
+      native_symbol: "MON"
+      native_decimals: 18
+
+    # PrismSettleJob on local anvil
+    - chain_name: "prismsettle_job"
+      chain_type: "evm"
+      abi_type: "erc20"
+      rpc_urls:
+        - "http://host.docker.internal:8545"
+      contract_addr: "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9"
+      contract_parser: PrismSettleJob
+      start_block: 1
+      confirmations: 0
+      decimals: 18
+      workers: 2
+      batch_size_db: 100
+      batch_size_sync: 50
+      sync_interval: 1000
+      commit_step: 10
+      timeout: 20
+      block_cache_size: 1024
+      reorg_min_depth: 64
+      task_queue_size: 100
+      task_backpressure_seconds: 30
+      task_send_retry_ms: 100
+      block_number_retry_seconds: 5
+      permanent_failure_sleep_seconds: 30
+      lock_expiration_seconds: 60
+      max_sync_retries: 5
+      native_symbol: "MON"
+      native_decimals: 18
+
+    # ArbitrationHook on local anvil
+    - chain_name: "prismsettle_hook"
+      chain_type: "evm"
+      abi_type: "erc20"
+      rpc_urls:
+        - "http://host.docker.internal:8545"
+      contract_addr: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"
+      contract_parser: PrismSettleHook
+      start_block: 1
+      confirmations: 0
+      decimals: 18
+      workers: 2
+      batch_size_db: 100
+      batch_size_sync: 50
+      sync_interval: 1000
+      commit_step: 10
+      timeout: 20
+      block_cache_size: 1024
+      reorg_min_depth: 64
+      task_queue_size: 100
+      task_backpressure_seconds: 30
+      task_send_retry_ms: 100
+      block_number_retry_seconds: 5
+      permanent_failure_sleep_seconds: 30
+      lock_expiration_seconds: 60
+      max_sync_retries: 5
+      native_symbol: "MON"
+      native_decimals: 18
+
+evaluator:
+  private_key: "0d633a23c569763107254fb56e29c379cbae379b4ac697bed09af6eb5ba4f813"
+  evaluator_address: "0xcABFefeddd874AcABCc63bB1414194863a128250"
+  chain_id: 31337
+  chain_name: "prismsettle_registry"
+  rpc_url: "http://host.docker.internal:8545"
+  registry_addr: "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"
+  job_addr: "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9"
+  hook_addr: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"
+  poll_interval: 2
+  batch_size: 20
+  keeper_tick_sec: 30
+
+notify:
+  telegram_token: ""
+  chat_id: ""

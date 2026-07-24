@@ -16,12 +16,12 @@ import (
 // (source=1) and one arbitration decision (source=2).
 type DecisionLog struct {
 	ID         uint64         `gorm:"primaryKey;autoIncrement" json:"id"`
-	JobID      string         `gorm:"column:job_id;type:varchar(128;index:idx_job_source,unique" json:"job_id"`
+	JobID      string         `gorm:"column:job_id;type:varchar(128);index:idx_job_source,unique" json:"job_id"`
 	Source     uint8          `gorm:"column:source;index:idx_job_source,unique" json:"source"` // 1=main, 2=arbitration
 	Decision   string         `gorm:"column:decision;type:varchar(32)" json:"decision"`        // complete / reject / dispute_resolved / fallback
 	Score      string         `gorm:"column:score;type:varchar(64)" json:"score"`              // decimal string, e.g. "600000000000000000"
 	Reason     string         `gorm:"column:reason;type:varchar(512)" json:"reason"`
-	TxHash     string         `gorm:"column:tx_hash;type:varchar(128" json:"tx_hash"`
+	TxHash     string         `gorm:"column:tx_hash;type:varchar(128)" json:"tx_hash"`
 	CallerRole string         `gorm:"column:caller_role;type:varchar(64)" json:"caller_role"` // SD §4.5.7 audit field
 	Invalid    bool           `gorm:"column:invalid;index" json:"invalid"`                    // true if reorg-affected
 	CreatedAt  time.Time      `gorm:"column:created_at;autoCreateTime" json:"created_at"`

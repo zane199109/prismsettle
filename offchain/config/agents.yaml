@@ -19,8 +19,8 @@ llm:
 # DeFi analysis agent: input = market data, output = arbitrage opportunity
 # analysis. (FR-AP01/02/04)
 defi:
-  port: 8001
-  endpoint: "http://localhost:8001"
+  port: 9101
+  endpoint: "http://localhost:9101"
   model: ""  # inherit from llm.model
   system_prompt: |
     You are a DeFi market analysis agent. Given market data (prices, pools,
@@ -29,8 +29,8 @@ defi:
 
 # Data labeling agent: input = sample to label, output = label + confidence.
 data_labeling:
-  port: 8002
-  endpoint: "http://localhost:8002"
+  port: 9102
+  endpoint: "http://localhost:9102"
   model: ""
   system_prompt: |
     You are a data labeling agent. Given an unlabeled sample, produce a label
@@ -38,8 +38,8 @@ data_labeling:
 
 # Translation agent: input = source text, output = target-language translation.
 translation:
-  port: 8003
-  endpoint: "http://localhost:8003"
+  port: 9103
+  endpoint: "http://localhost:9103"
   model: ""
   system_prompt: |
     You are a translation agent. Translate the input text to English (or to
@@ -50,8 +50,8 @@ translation:
 # {score: uint96 in [0,1e18], reason: string}. Same input must yield the same
 # score (variance < 0.05). (FR-E14)
 eval:
-  port: 8004
-  endpoint: "http://localhost:8004"
+  port: 9104
+  endpoint: "http://localhost:9104"
   model: "gpt-4o-mini"
   system_prompt: |
     You are an evaluation agent for deliverable quality. Score the deliverable

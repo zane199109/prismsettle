@@ -123,6 +123,7 @@ func (p *PrismSettleParser) Parse(log types.Log) (any, error) {
 		// free-form text field. The EventIngestService post-hook extracts
 		// agentId/owner from this event and upserts into agent_registry.
 		// Full metadata capture is deferred to Phase 9 (replay from raw logs).
+		event.Value = "0"
 
 	case EventValidationSubmittedSig.Hex():
 		// Topics: [sig, agentId, shard, validator]

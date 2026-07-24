@@ -71,6 +71,7 @@ func (p *PrismSettleHookParser) Parse(log types.Log) (any, error) {
 		event.To = agentIDFromTopic(log.Topics[1])
 		// reasonHash stored in TokenAddr (FR-JI06 仲裁态)
 		event.TokenAddr = log.Topics[2].Hex()
+		event.Value = "0"
 
 	case EventDisputeResolvedSig.Hex():
 		// Topics: [sig, jobId]

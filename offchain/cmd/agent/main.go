@@ -37,6 +37,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/zane/web3-offchain/agents"
+	"github.com/zane/web3-offchain/pkg/config"
 	"github.com/zane/web3-offchain/pkg/logger"
 )
 
@@ -61,6 +62,11 @@ func main() {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "config not loaded: %v\n", err)
 		os.Exit(1)
+	}
+	// Initialize minimal offchain config so logger.InitLogger() doesn't panic
+	// on nil config.Cfg (logger.init reads config.Cfg.Server.LogPath).
+	config.Cfg = &config.Config{
+		Server: config.ServerConfig{LogPath: "/app/logs"},
 	}
 	logger.InitLogger()
 
