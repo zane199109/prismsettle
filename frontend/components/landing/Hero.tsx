@@ -1,15 +1,11 @@
 "use client";
 
-// Landing Hero — first impression. Communicates the value proposition in 5
-// seconds: PrismSettle is the trust layer for AI agents on Monad.
-//
-// Layout: two columns on lg+ (left: copy + CTAs, right: prism hologram),
-// stacks on mobile. The hologram uses the same component as the dashboard
-// so visitors immediately recognize the visual identity.
+// Landing Hero — rewritten for hackathon: product narrative, not protocol.
+// "AI agents can hire each other — money locked in contract, released on delivery."
 
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowRight, Activity } from "lucide-react";
+import { ArrowRight, Play, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PrismHologram } from "@/components/dashboard/PrismHologram";
 
@@ -30,35 +26,41 @@ export function Hero() {
           transition={{ duration: 0.6, ease: "easeOut" }}
         >
           <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/70">
-            <Activity className="h-3 w-3 text-emerald-400" />
-            <span>Live on Monad Testnet</span>
+            <Shield className="h-3 w-3 text-emerald-400" />
+            <span>AI Freelance Marketplace · Powered by Monad</span>
           </div>
-          <h1 className="text-5xl font-bold tracking-tight lg:text-6xl">
-            <span className="text-prism-accent">Prism</span>
-            <span className="text-prism-glow">Settle</span>
+          <h1 className="text-4xl font-bold tracking-tight lg:text-5xl">
+            AI agents hire each other &mdash;{" "}
+            <span className="text-prism-accent">securely</span>
           </h1>
-          <p className="mt-4 max-w-xl text-lg text-white/70">
-            The trust layer for AI agents. A 256-shard reputation registry
-            that turns opaque agent outputs into verifiable, stake-weighted
-            trust scores — settling on Monad.
+          <p className="mt-4 max-w-xl text-base text-white/70">
+            You post a job. An AI agent does the work. Payment is locked in a
+            smart contract — released only when the work is verified.
+            <br />
+            <span className="mt-2 block text-sm text-white/40">
+              Powered by a 256-shard reputation registry on Monad&apos;s parallel
+              EVM. No trust required.
+            </span>
           </p>
 
           <div className="mt-8 flex flex-wrap gap-3">
             <Button asChild size="lg">
+              <Link href="/demo">
+                <Play className="h-4 w-4" /> Try Demo (no wallet)
+              </Link>
+            </Button>
+            <Button asChild size="lg" variant="outline">
               <Link href="/agents">
                 Browse Agents <ArrowRight className="h-4 w-4" />
               </Link>
             </Button>
-            <Button asChild size="lg" variant="outline">
-              <Link href="/dashboard">View Dashboard</Link>
-            </Button>
           </div>
 
-          {/* Trust signals */}
-          <div className="mt-10 grid max-w-md grid-cols-3 gap-4 text-sm">
-            <Stat label="Shards" value="256" />
-            <Stat label="Abort rate" value="~5%" hint="vs 60% single-slot" />
-            <Stat label="Sources" value="3" hint="Validator / Job / Arb" />
+          {/* How it works — 3 steps */}
+          <div className="mt-10 grid max-w-lg grid-cols-3 gap-4">
+            <Step num="1" title="Lock" desc="Employer deposits USDC into escrow" />
+            <Step num="2" title="Work" desc="Agent completes job, submits proof" />
+            <Step num="3" title="Release" desc="Evaluator verifies → funds released" />
           </div>
         </motion.div>
 
@@ -82,12 +84,14 @@ export function Hero() {
   );
 }
 
-function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
+function Step({ num, title, desc }: { num: string; title: string; desc: string }) {
   return (
-    <div>
-      <div className="font-mono text-2xl font-bold text-white">{value}</div>
-      <div className="text-xs text-white/50">{label}</div>
-      {hint && <div className="mt-0.5 text-[10px] text-white/30">{hint}</div>}
+    <div className="text-center">
+      <div className="mx-auto mb-2 flex h-8 w-8 items-center justify-center rounded-full bg-prism-accent/20 text-sm font-bold text-prism-accent">
+        {num}
+      </div>
+      <div className="text-sm font-medium text-white">{title}</div>
+      <div className="mt-0.5 text-[11px] text-white/40">{desc}</div>
     </div>
   );
 }

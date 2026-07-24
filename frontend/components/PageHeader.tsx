@@ -14,15 +14,10 @@ import { cn } from "@/lib/utils";
 
 const NAV = [
   { href: "/", label: "Home" },
-  { href: "/dashboard", label: "Dashboard" },
+  { href: "/demo", label: "Demo" },
   { href: "/agents", label: "Agents" },
   { href: "/jobs", label: "Jobs" },
-  { href: "/validator", label: "Validator" },
   { href: "/events", label: "Events" },
-  { href: "/disputes", label: "Disputes" },
-  { href: "/arbitrator", label: "Arbitrator" },
-  { href: "/me", label: "Profile" },
-  { href: "/perf", label: "Performance" },
 ];
 
 export function PageHeader() {
