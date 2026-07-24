@@ -1,6 +1,7 @@
-# PrismSettle — AI Agent Freelance Marketplace
+# PrismSettle — Trusted Escrow + On-Chain Reputation
 
-**AI 代理之间做生意，不用互相信任。**
+**Hire anyone &mdash; person, AI agent, or another AI &mdash; without trust.**
+**一个协议，覆盖三种场景：P2P · P2A · A2A**
 
 [![CI](https://github.com/zane/web3-offchain/actions/workflows/ci.yml/badge.svg)](https://github.com/zane/web3-offchain/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -11,12 +12,18 @@
 
 ## 30 秒看懂
 
-**问题：** AI Agent 越来越多（交易机器人、数据分析器、翻译器…），但它们之间没法放心地互相雇佣——怕付了钱不干活，或干了活不给钱。
+**问题：** 你想找一个人 / AI Agent / 另一个 Agent 帮你干活——但不信任对方。先付钱怕对方不干，干了又怕对方不给钱。
 
 **PrismSettle 的做法：**
 1. **Lock** — 雇主把 USDC 锁在智能合约里
-2. **Work** — AI Agent 干活并提交证据
+2. **Work** — 对方干活并提交链上证据
 3. **Release** — 验证通过后自动放款，否则退款
+
+| 场景 | 谁雇谁 | 例子 |
+|------|--------|------|
+| **P2P** | 人 → 人 | 在论坛找 freelancer 写合约，锁 100 USDC，交活后放款 |
+| **P2A** | 人 → AI Agent | 让 AI 审计合约，预付款进 escrow，审计报告上链后自动结算 |
+| **A2A** | Agent → Agent | 套利 Agent 发现机会，自动雇佣执行 Agent，成交后自动分账 |
 
 **技术亮点：** 256-shard 声誉存储——利用 Monad 的并行 EVM 特性，将声誉数据分散到 256 个分片，消除高并发下的写入冲突（理论冲突概率降低 255/256）。
 
@@ -47,36 +54,44 @@ bash scripts/demo-minimal.sh
 ### 3 分钟讲稿
 
 ```
-(0:00) 大家好，这是 PrismSettle——AI Agent 的链上自由职业市场。
+(0:00) 大家好，这是 PrismSettle——链上 Escrow + 声誉协议。
 
-(0:30) 你有一个 DeFi 分析任务，想雇一个 AI Agent 来做。
-      先付 10 USDC 到合约——钱被锁住，Agent 拿不到。
-      
-(1:00) Agent 完成任务，提交证据。 
-      验证者(Evaluator)检查通过→钱自动打给 Agent。
-      如果 Agent 不干活→到期后退款给雇主。
+      它解决一个古老的问题：你要付钱让别人帮你干活，但你不信任对方。
+      不管对方是真人、AI Agent、还是另一个 Agent—— PrismSettle 都管用。
+
+(0:30) 三个场景，一个协议：
+
+      P2P：你在论坛找了一个 freelancer 写合约。
+           锁 100 USDC，对方交活，你确认，钱自动放款。
+
+      P2A：你让 AI Agent 审计这份合约。
+           预付款进 escrow，Agent 提交审计报告，验证通过后自动结算。
+
+      A2A：两个 Agent 自动协作。
+           套利 Agent A 发现机会，自动雇佣执行 Agent B，B 执行并提交 tx hash，
+           链上验证后自动分账。全程无人类参与。
 
 (1:30) 核心技术：256-shard 声誉存储。
       Monad 的并行 EVM 有个问题——多人同时修改同一个合约状态会冲突(abort)。
-      我们把声誉数据拆成 256 个分片，99.6% 的情况下不同 Agent 的写入不冲突。
-      
+      我们把声誉数据拆成 256 个分片，99.6% 的情况下写入不冲突。
+
 (2:00) 当前状态：
-      - 3 个智能合约（Registry/Job/Arbitration）已部署并测试
+      - 3 个智能合约已部署到 Monad 测试网
       - 106 个单元测试全部通过
-      - Go 后端（indexer + evaluator + keeper）
-      - Next.js 前端，支持 RainbowKit 钱包
-      
-(2:30) 下一步：部署到 Monad 测试网，接入真实 AI Agent。
+      - 测试网 Demo 已跑通（mint → createJob → fund → submit → complete）
+      - Go 后端 + Next.js 前端
+
+(2:30) 下一步：接入真实用户场景，运行 OCC 压测验证 60%→5%。
 ```
 
-### 合约地址（Anvil 本地）
+### 合约地址（Monad 测试网）
 
 | 合约 | 地址 |
 |------|------|
-| MockERC20 | `0x5FbDB2315678afecb367f032d93F642f64180aa3` |
-| PrismSettleRegistry | `0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512` |
-| ArbitrationHook | `0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0` |
-| PrismSettleJob | `0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9` |
+| MockERC20 | `0xe9ea3854bc57a49749c05190c577f4eCa9358861` |
+| PrismSettleRegistry | `0x296d8DfDc0E306e3472a49CE5C9e0B7a68066881` |
+| ArbitrationHook | `0x61595999f64f73188F0C48db59698911491889B4` |
+| PrismSettleJob | `0x548b2385723b8b9EdeEd99ddaD7830F7212C27ff` |
 
 ### Demo 交易验证
 

@@ -40,17 +40,23 @@ echo "    https://faucet.monad.xyz/"
 echo ""
 
 # ========================
-# 1. 获取部署私钥
+# 1. 获取部署私钥（从 .env 读取）
 # ========================
-echo "[1/6] 部署账户私钥（输入不回显）..."
-read -s -p "  私钥 (0x...): " DEPLOYER_KEY
-echo ""
-if [[ ! "$DEPLOYER_KEY" =~ ^0x[a-fA-F0-9]{64}$ ]]; then
-  echo "  ❌ 私钥格式错误，应为 0x + 64 位 hex"
+echo "[1/6] 读取 .env 的 DEPLOYER_KEY..."
+
+# source 只读 .env 中的 DEPLOYER_KEY，不污染 shell 环境
+DEPLOYER_KEY=$(grep "^DEPLOYER_KEY=" "$ENV_FILE" | head -1 | cut -d= -f2 | tr -d ' \t\n\r')
+
+if [ -z "$DEPLOYER_KEY" ]; then
+  echo "  ❌ .env 中未设置 DEPLOYER_KEY"
+  echo "  请在 .env 中填入: DEPLOYER_KEY=你的私钥（不含 0x）"
   exit 1
 fi
 
-DEPLOYER_ADDR=$(cast wallet address "$DEPLOYER_KEY")
+# forge 需要 0x 前缀
+DEPLOYER_KEY_WITH_PREFIX="0x${DEPLOYER_KEY}"
+
+DEPLOYER_ADDR=$(cast wallet address "$DEPLOYER_KEY_WITH_PREFIX")
 echo "  部署地址: $DEPLOYER_ADDR"
 echo ""
 
@@ -74,16 +80,27 @@ fi
 echo ""
 
 # ========================
-# 3. 收集其他账户地址
+# 3. Evaluator / Facilitator 地址
 # ========================
-echo "[3/6] Evaluator 地址（持有 REGISTRY_EVALUATOR_ROLE / COMMERCE_EVALUATOR_ROLE / RESOLVER_ROLE）..."
-read -p "  地址 (0x...)，留空使用部署账户: " EVALUATOR_ADDR
+echo "[3/6] 配置 Evaluator 和 Facilitator..."
+
+# Evaluator：优先读 .env 的 EVALUATOR_ADDRESS，未设置则用部署地址
+EVALUATOR_ADDR=$(grep "^EVALUATOR_ADDRESS=" "$ENV_FILE" | head -1 | cut -d= -f2 | tr -d ' \t\n\r')
 if [ -z "$EVALUATOR_ADDR" ]; then
   EVALUATOR_ADDR="$DEPLOYER_ADDR"
+  echo "  Evaluator: 使用部署地址（$EVALUATOR_ADDR）"
+else
+  echo "  Evaluator: $EVALUATOR_ADDR"
 fi
-echo "  Evaluator: $EVALUATOR_ADDR"
 
-read -p "  Facilitator 地址（x402 支付，留空跳过）: " FACILITATOR_ADDR
+# Facilitator：优先读 .env，未设置则 address(0)
+FACILITATOR_ADDR=$(grep "^FACILITATOR_ADDRESS=" "$ENV_FILE" | head -1 | cut -d= -f2 | tr -d ' \t\n\r')
+if [ -z "$FACILITATOR_ADDR" ]; then
+  FACILITATOR_ADDR="0x0000000000000000000000000000000000000000"
+  echo "  Facilitator: 未设置，使用 address(0)"
+else
+  echo "  Facilitator: $FACILITATOR_ADDR"
+fi
 echo ""
 
 # ========================
@@ -103,7 +120,7 @@ FORGE_OUT=$(forge script script/Deploy.s.sol:Deploy \
   --rpc-url "$MONAD_RPC" \
   --broadcast \
   --slow \
-  --private-key "$DEPLOYER_KEY" \
+  --private-key "$DEPLOYER_KEY_WITH_PREFIX" \
   --via-ir \
   --optimizer-runs 200 \
   2>&1) || {
