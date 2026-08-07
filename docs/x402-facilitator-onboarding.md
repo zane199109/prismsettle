@@ -12,6 +12,7 @@ PrismSettle 采用 **Monad 官方 x402 facilitator**，不自建。facilitator �
 | 项目 | 值 |
 |------|-----|
 | Facilitator URL | https://x402-facilitator.molandak.org |
+| Facilitator 合约地址（Monad testnet） | `0x7f6a2850669202519f0FE8aa912451238820Db86` |
 | Testnet USDC | `0x534b2f3A21130d7a60830c2Df862319e593943A3` |
 | USDC decimals | 6 |
 | 收据格式 | 见 [x402-receipt-format.md](file:///home/administrator/Documents/trae_projects/PrismSettle/docs/x402-receipt-format.md) |
@@ -33,7 +34,7 @@ constructor(address token, address hookFacilitator) {
 
 ```bash
 # Monad testnet 部署时（facilitator 启用）
-export FACILITATOR_ADDRESS=0x...  # Monad 官方 facilitator 合约地址
+export FACILITATOR_ADDRESS=0x7f6a2850669202519f0FE8aa912451238820Db86
 forge script Deploy --rpc-url https://testnet-rpc.monad.xyz --broadcast
 
 # Anvil 本地 / facilitator 不可用时（ERC-20 兜底）

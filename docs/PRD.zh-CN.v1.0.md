@@ -252,12 +252,13 @@ PrismSettle 借鉴 ERC-8004 三段式接口（Identity / Reputation / Validation
   - **V2 阶段**：依托「平台交易手续费抽成（ERC-8183 Job 完成时抽 1%-2%）+ 作恶罚没池（slash 罚没资金流入 reward 池）」落地完整激励模型
 - 原因：reward 来源未定（通胀？调用费抽成？），无明确经济模型前强行实现 = 过度设计
 
-### 4.2 智能合约 — PrismSettleJob（ERC-8183 核心 4 态 + ArbitrationHook 扩展 + x402 集成）
+### 4.2 智能合约 — PrismSettleJob（ERC-8183 状态机 4 宏态→7 态 + ArbitrationHook 扩展 + x402 集成）
 
-**核心 4 态状态机**（严格对齐 ERC-8183 官方语义）：
-- 主路径：`Created(=Open) → Funded → Assigned → Submitted → Completed(=Terminal)`
-- 退款路径：`Funded/Assigned/Submitted → Refunded(=Terminal)`
-- 仲裁路径（Hook 内部，不污染核心 4 态）：ArbitrationHook 合约内部维护 `Disputed → DisputeResolved`，通过 Hook 回调挂接到 `submit` 动作后
+**核心状态机**（官方 4 宏态 → 7 具体态，宏态严格对齐 ERC-8183 官方语义）：
+- 官方 4 宏态映射：`Open=Created`、`Funded=Funded`、`Submitted=Assigned→Submitted`、`Terminal=DisputeResolved→Completed/Refunded`
+- 主路径：`Created → Funded → Assigned → Submitted → Completed`
+- 退款路径：`Funded/Assigned/Submitted → Refunded`（含 `claimRefund` 与仲裁 ruling=1）
+- 仲裁路径：仲裁发起与裁决逻辑在 ArbitrationHook（Hook 内部维护 `Disputed` 态、选任仲裁方、计算费率）；裁决后经 `notifyDisputeResolved` 回调将 Job 切换到 `DisputeResolved` 细化态（等待公告期），公告期后任何人可调 `executeArbitrationResult` 落到 `Completed`（ruling=2）或 `Refunded`（ruling=1）
 
 **函数签名清单**（Solidity 0.8.24+）：
 
@@ -327,7 +328,7 @@ event DisputeResolved(uint256 indexed jobId, uint8 ruling);
 | FR-J08 | `ArbitrationHook.resolveDispute(jobId, ruling)` Evaluator 裁决（1=BUYER 退款 / 2=Provider 放款） | P0 | Hook 内状态 `Disputed → DisputeResolved`；触发 `DisputeResolved` 事件；仅 Evaluator 可调用；ruling=0 revert（防误传） |
 | FR-J09 | `getJobState(jobId)` 读取当前状态 + 8 字段（含 proofHash + hook） | P0 | 256 分片求和定位 |
 | FR-J10 | **256 分片存储**：`shardJobs[jobId & 0xFF][jobId]` | P0 | 与 Registry 同架构，OCC 写写冲突消除 |
-| FR-J11 | **ArbitrationHook 合约独立部署**：封装 Disputed/DisputeResolved 状态，不污染 Job 核心 4 态 | P0 | Hook 合约部署成功；createJob 时可挂载；不挂载时 Job 仅走核心 4 态 |
+| FR-J11 | **ArbitrationHook 合约独立部署**：封装仲裁发起与裁决逻辑（Hook 内部 Disputed 态），裁决后回调 Job 进入 DisputeResolved 细化态 | P0 | Hook 合约部署成功；createJob 时可挂载；不挂载时 Job 不走仲裁路径 |
 
 **支付 token 说明**：
 - 统一入口 `fundViaToken` 内部按支付方式分流：
@@ -674,11 +675,11 @@ PrismSettle 是 OCC 链专属基建，剥离 Monad 后设计失效。
 │   stake() / slash() / unstake()                                       │
 │   registerAgent() ────────────┼──→ agentMetadata                     │
 │                                                                      │
-│  Commerce Layer: PrismSettleJob (ERC-8183 核心 4 态 + 256 分片)       │
+│  Commerce Layer: PrismSettleJob (ERC-8183 4 宏态→7 态 + 256 分片)      │
 |   createJob(+hook) ──→ shardJobs[256]                                 │
 |   fundViaToken() / assign() / submit() / complete() / claimRefund() │
-│   核心 4 态：Created(Open)→Funded→Assigned→Submitted→Completed/Refunded(Terminal) │
-│   ArbitrationHook（可选挂载）：Disputed→DisputeResolved（Hook 内部，不污染核心 4 态）│
+│   状态机（4 宏态→7 态）：Created(Open)→Funded→Assigned→Submitted→DisputeResolved→Completed/Refunded(Terminal) │
+│   ArbitrationHook（可选挂载）：Disputed 在 Hook 内裁决；裁决后回调 Job 进入 DisputeResolved，公告期后执行 │
 └───────────────────────────────────┬──────────────────────────────────┘
                                     │ Monad 测试网
                                     ▼
@@ -756,16 +757,17 @@ bytes32 public constant REGISTRY_EVALUATOR_ROLE = keccak256("REGISTRY_EVALUATOR_
 **Job 合约数据模型**：
 
 ```solidity
-// 核心 4 态映射说明：
-//   ERC-8183 官方 4 态 = Open / Funded / Submitted / Terminal
-//   enum 落地映射：
+// 核心 4 宏态映射说明：
+//   ERC-8183 官方 4 宏态 = Open / Funded / Submitted / Terminal
+//   enum 落地映射（4 宏态 → 7 具体态）：
 //     Open      = Created（Job 创建，未注资）
 //     Funded    = Funded（资金到位）
-//     Submitted = Assigned → Submitted（已分配 Provider + 提交交付物；Assigned 为 Funded 的隐式子态）
-//     Terminal  = Completed（放款）/ Refunded（退款）— Terminal 的两种终态分支
-//   注：6 个 enum 值是 Terminal 双分支 + Assigned 子态的展开，逻辑上仍是核心 4 态；
-//       仲裁态（Disputed/DisputeResolved）不在此 enum，封装在 ArbitrationHook 独立合约
-enum JobState { Created, Funded, Assigned, Submitted, Completed, Refunded }
+//     Submitted = Assigned → Submitted（已分配 Provider + 提交交付物；Assigned 为分配子态）
+//     Terminal  = DisputeResolved → Completed（放款）/ Refunded（退款）— 含仲裁结算细化态
+//   注：7 个 enum 值是 4 宏态的展开：Terminal 双分支（Completed/Refunded）+ Assigned 子态
+//       + DisputeResolved 仲裁结算细化态；仲裁发起与裁决逻辑仍在 ArbitrationHook 合约，
+//       裁决后经 notifyDisputeResolved 回调进入 DisputeResolved，公告期后执行落终态
+enum JobState { Created, Funded, Assigned, Submitted, DisputeResolved, Completed, Refunded }
 struct Job {
     address buyer;          // 资金提供方
     address provider;       // 任务执行方
@@ -773,7 +775,7 @@ struct Job {
     bytes32 deliverableHash;// 交付物 hash（IPFS hash 或内容 hash）
     bytes32 proofHash;      // proof_hash 上链存证（非可信执行，V2 hook）
     uint64 deadline;        // 超时退款时间
-    JobState state;         // 见上方映射说明（逻辑 4 态，enum 落地 6 值）
+    JobState state;         // 见上方映射说明（4 宏态，enum 落地 7 值）
     uint256 parentJobId;    // 二级分发 hook（Provider → Sub-provider）
     address hook;           // ArbitrationHook 合约地址（0 表示不挂载）
     uint64 createdAt;

@@ -6,7 +6,7 @@
 [![CI](https://github.com/zane/web3-offchain/actions/workflows/ci.yml/badge.svg)](https://github.com/zane/web3-offchain/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Solidity](https://img.shields.io/badge/Solidity-0.8.24-363636)
-![Monad](https://img.shields.io/badge/Monad-Optimistic%20Parallel%20EVM-00BFFF)
+![Monad](https://img.shields.io/badge/Monad-Parallel%20EVM-00BFFF)
 
 ---
 
@@ -25,7 +25,8 @@
 | **P2A** | 人 → AI Agent | 让 AI 审计合约，预付款进 escrow，审计报告上链后自动结算 |
 | **A2A** | Agent → Agent | 套利 Agent 发现机会，自动雇佣执行 Agent，成交后自动分账 |
 
-**技术亮点：** 256-shard 声誉存储——利用 Monad 的并行 EVM 特性，将声誉数据分散到 256 个分片，消除高并发下的写入冲突（理论冲突概率降低 255/256）。
+**为什么在 Monad 上：**
+Agent 经济需要高频、低成本的链上交互——几百个 Agent 同时发交易、互相结算、更新声誉。Monad 的并行 EVM 提供 10,000+ TPS 和低于 $0.001 的交易费，是唯一能承载这个场景的链。PrismSettle 就是为这个场景构建的。
 
 ---
 
@@ -71,17 +72,24 @@ bash scripts/demo-minimal.sh
            套利 Agent A 发现机会，自动雇佣执行 Agent B，B 执行并提交 tx hash，
            链上验证后自动分账。全程无人类参与。
 
-(1:30) 核心技术：256-shard 声誉存储。
-      Monad 的并行 EVM 有个问题——多人同时修改同一个合约状态会冲突(abort)。
-      我们把声誉数据拆成 256 个分片，99.6% 的情况下写入不冲突。
+(1:30) 为什么在 Monad 上：
+
+       Agent 经济的未来是高频、自动化的机器间交易——几百个 Agent 同时在链上
+       互相结算、更新声誉、仲裁争议。这需要一条高 TPS、低费用的链。
+
+       Monad 的并行 EVM 是唯一能满足这个要求的链：10,000+ TPS，一笔 tx 
+       几分钱。PrismSettle 从第一天就是为 Monad 上的 Agent 经济设计的。
+
+       我们集成了 x402 微支付，让 Agent 可以低额结算而不用被 gas 吃掉利润。
 
 (2:00) 当前状态：
       - 3 个智能合约已部署到 Monad 测试网
       - 106 个单元测试全部通过
       - 测试网 Demo 已跑通（mint → createJob → fund → submit → complete）
       - Go 后端 + Next.js 前端
+      - x402 微支付集成
 
-(2:30) 下一步：接入真实用户场景，运行 OCC 压测验证 60%→5%。
+(2:30) 下一步：接入真实 Agent 场景，验证高并发下的稳定性。
 ```
 
 ### 合约地址（Monad 测试网）
@@ -96,10 +104,13 @@ bash scripts/demo-minimal.sh
 ### Demo 交易验证
 
 ```bash
-# 查看 Agent 0x1111 的声誉分（应返回 700000000000000000 = 0.7）
-cast call 0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512 \
+# 查看 Agent 0x1111 的声誉分（应返回 700000000000000000 = 0.7e18）
+cast call 0x296d8DfDc0E306e3472a49CE5C9e0B7a68066881 \
   "getScore(uint256)(uint256)" 0x1111 \
-  --rpc-url http://127.0.0.1:8545
+  --rpc-url https://testnet-rpc.monad.xyz
+
+# 全链路测试网 demo
+bash scripts/demo-testnet.sh
 ```
 
 ---
@@ -115,6 +126,7 @@ cast call 0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512 \
 ┌──────────────────▼───────────────────────────────┐
 │              Offchain (Go)                        │
 │  Indexer · Evaluator · Keeper · REST API :9527   │
+│  4 Agent 微服务 (DeFi/Data/Translation/Eval)     │
 └──────────────────┬───────────────────────────────┘
                    │
 ┌──────────────────▼───────────────────────────────┐
@@ -122,14 +134,15 @@ cast call 0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512 \
 │                                                   │
 │  ┌──────────────┐  ┌──────────┐  ┌─────────────┐ │
 │  │  Registry    │  │  Job     │  │ Arbitration │ │
-│  │  256-shard   │  │  Escrow  │  │ Hook        │ │
-│  │  Reputation  │  │  ERC-8183│  │ Dispute     │ │
+│  │  Reputation  │  │  Escrow  │  │ Hook        │ │
+│  │  256-shard   │  │  ERC-8183│  │ Dispute     │ │
 │  └──────────────┘  └──────────┘  └─────────────┘ │
 └──────────────────┬───────────────────────────────┘
                    │
         ┌──────────▼──────────┐
-        │   Monad EVM         │
-        │   (parallel OCC)    │
+        │   Monad Parallel EVM │
+        │   10,000+ TPS        │
+        │   < $0.001 per tx    │
         └─────────────────────┘
 ```
 
@@ -139,12 +152,21 @@ cast call 0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512 \
 
 | 合约 | 行数 | 功能 |
 |------|------|------|
-| `PrismSettleRegistry` | 434 | 256-shard 声誉存储、Agent 注册、Staking/Slashing、EMA 平滑、不活跃衰减 |
+| `PrismSettleRegistry` | 434 | 声誉存储、Agent 注册、Staking/Slashing、EMA 平滑、不活跃衰减 |
 | `PrismSettleJob` | 270 | ERC-8183 Job 生命周期：create → fund → assign → submit → complete/refund |
 | `ArbitrationHook` | 156 | 争议仲裁：buyer dispute → resolver ruling (1=buyer/2=provider) |
-| `BaselineRegistry` | 327 | V0 对照合约（单槽存储），用于后续 OCC 压测对比 |
 
 测试：**106 个测试全部通过**（Registry 45 + Job 34 + ArbitrationHook 13 + Integration 8 + Baseline 6）
+
+---
+
+## Monad 原生特性
+
+| 特性 | 集成方式 |
+|------|---------|
+| **并行 EVM** | 256-shard 存储降低高并发写入冲突概率，适合 Agent 批量作业 |
+| **x402 微支付** | `fundViaToken` 统一入口内置 x402 settle 路径，支持 Agent 间低额结算 |
+| **低延迟** | 实时声誉更新，Agent 交易秒级确认 |
 
 ---
 

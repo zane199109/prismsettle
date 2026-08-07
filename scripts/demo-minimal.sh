@@ -15,7 +15,7 @@ SELLER="0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
 
 echo "=============================================="
 echo "  PrismSettle Minimal Prototype Demo"
-echo "  Full Happy Path: createJob → fund → assign → submit → complete"
+echo "  Full Happy Path: createJob → fund → grabJob → submit → complete"
 echo "=============================================="
 echo ""
 
@@ -59,8 +59,8 @@ echo ""
 echo "[5/10] Creating Job (agentId=0x1111, deadline=+1h)..."
 CREATE_TS=$(($(date +%s) + 3600))
 cast send --rpc-url $RPC --private-key $BUYER_KEY \
-  $JOB_ADDR "createJob(uint256,uint256,uint64,address)" \
-  "0x1111" "0" "$CREATE_TS" "0x0000000000000000000000000000000000000000" >/dev/null 2>&1
+  $JOB_ADDR "createJob(uint256,uint256,uint64,address,uint96)" \
+  "0x1111" "0" "$CREATE_TS" "0x0000000000000000000000000000000000000000" "0" >/dev/null 2>&1
 echo "  ✓ Job #0 created"
 echo ""
 
@@ -71,15 +71,23 @@ cast send --rpc-url $RPC --private-key $BUYER_KEY \
 echo "  ✓ Job funded with 10 USDC"
 echo ""
 
-# Assign provider
-echo "[7/10] Assigning Provider (Seller)..."
+# Register provider agent + seed reputation
+echo "[7/10] Registering Provider Agent..."
 cast send --rpc-url $RPC --private-key $BUYER_KEY \
-  $JOB_ADDR "assign(uint256,address)" "0" "$SELLER" >/dev/null 2>&1 || true
-echo "  ✓ Provider assigned"
+  $REGISTRY_ADDR "registerAgent(uint256,string)" "0x5555" '{"endpointUrl":"","capabilities":"provider"}' >/dev/null 2>&1
+cast send --rpc-url $RPC --private-key $BUYER_KEY \
+  $REGISTRY_ADDR "seedAgent(uint256,uint96)" "0x5555" "700000000000000000" >/dev/null 2>&1
+echo "  ✓ Provider agent (0x5555) registered with reputation 0.7e18"
+
+# Provider grabs the job
+echo "[8/10] Provider grabbing job..."
+cast send --rpc-url $RPC --private-key $SELLER_KEY \
+  $JOB_ADDR "grabJob(uint256,uint256)" "0" "0x5555" >/dev/null 2>&1
+echo "  ✓ Provider grabbed the job"
 echo ""
 
 # Submit proof
-echo "[8/10] Provider submitting proof..."
+echo "[9/10] Provider submitting proof..."
 PROOF_HASH=$(cast keccak "deliverable-proof-v1")
 cast send --rpc-url $RPC --private-key $SELLER_KEY \
   $JOB_ADDR "submit(uint256,bytes32,bytes32)" "0" "$PROOF_HASH" "$PROOF_HASH" >/dev/null 2>&1
@@ -87,14 +95,14 @@ echo "  ✓ Proof submitted: $PROOF_HASH"
 echo ""
 
 # Complete job
-echo "[9/10] Evaluator completing job..."
+echo "[10/10] Evaluator completing job..."
 cast send --rpc-url $RPC --private-key $BUYER_KEY \
   $JOB_ADDR "complete(uint256)" "0" >/dev/null 2>&1
 echo "  ✓ Job completed — escrow released!"
 echo ""
 
 # Verify results
-echo "[10/10] Verifying results..."
+echo "[11/11] Verifying results..."
 echo ""
 
 # Check seller balance

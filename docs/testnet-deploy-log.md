@@ -1,6 +1,6 @@
 # Monad Testnet 部署日志
 
-**部署时间：** 2026-07-24 14:41:30 UTC
+**部署时间：** 2026-08-07 12:34:02 UTC
 **部署账户：** 0x8EB3Fe3dDe56Cab0CDf32db3e6E5bA865596BE2C
 **网络：** Monad Testnet (chainId=10143)
 **RPC：** https://testnet-rpc.monad.xyz
@@ -10,10 +10,10 @@
 
 | 合约 | 地址 | Explorer |
 |------|------|----------|
-| MockERC20 (测试 USDC) | 0xe9ea3854bc57a49749c05190c577f4eCa9358861 | [https://testnet.monadexplorer.com/address/0xe9ea3854bc57a49749c05190c577f4eCa9358861](https://testnet.monadexplorer.com/address/0xe9ea3854bc57a49749c05190c577f4eCa9358861) |
-| PrismSettleRegistry | 0x296d8DfDc0E306e3472a49CE5C9e0B7a68066881 | [https://testnet.monadexplorer.com/address/0x296d8DfDc0E306e3472a49CE5C9e0B7a68066881](https://testnet.monadexplorer.com/address/0x296d8DfDc0E306e3472a49CE5C9e0B7a68066881) |
-| ArbitrationHook | 0x61595999f64f73188F0C48db59698911491889B4 | [https://testnet.monadexplorer.com/address/0x61595999f64f73188F0C48db59698911491889B4](https://testnet.monadexplorer.com/address/0x61595999f64f73188F0C48db59698911491889B4) |
-| PrismSettleJob | 0x548b2385723b8b9EdeEd99ddaD7830F7212C27ff | [https://testnet.monadexplorer.com/address/0x548b2385723b8b9EdeEd99ddaD7830F7212C27ff](https://testnet.monadexplorer.com/address/0x548b2385723b8b9EdeEd99ddaD7830F7212C27ff) |
+| MockERC20 (测试 USDC) | 0x90570a62436E201570C58B19B99d6eF77f76a62D | [https://testnet.monadexplorer.com/address/0x90570a62436E201570C58B19B99d6eF77f76a62D](https://testnet.monadexplorer.com/address/0x90570a62436E201570C58B19B99d6eF77f76a62D) |
+| PrismSettleRegistry | 0x9B4F5056AB82d5E3b75D28a9288cFE754a3e84E9 | [https://testnet.monadexplorer.com/address/0x9B4F5056AB82d5E3b75D28a9288cFE754a3e84E9](https://testnet.monadexplorer.com/address/0x9B4F5056AB82d5E3b75D28a9288cFE754a3e84E9) |
+| ArbitrationHook | 0xa230ceb08D3dF2BAEeFF44260e9a118f96271eD8 | [https://testnet.monadexplorer.com/address/0xa230ceb08D3dF2BAEeFF44260e9a118f96271eD8](https://testnet.monadexplorer.com/address/0xa230ceb08D3dF2BAEeFF44260e9a118f96271eD8) |
+| PrismSettleJob | 0x4DD3275b169b386596034d2066430971A1F07f1e | [https://testnet.monadexplorer.com/address/0x4DD3275b169b386596034d2066430971A1F07f1e](https://testnet.monadexplorer.com/address/0x4DD3275b169b386596034d2066430971A1F07f1e) |
 
 ## 角色配置
 
@@ -49,24 +49,16 @@
 ```
 Warning: This is a nightly build of Foundry. It is recommended to use the latest stable version. To mute this warning set `FOUNDRY_DISABLE_NIGHTLY_WARNING` in your environment. 
 
-Compiling 32 files with Solc 0.8.24
-Solc 0.8.24 finished in 7.50s
-Compiler run successful with warnings:
-Warning (2018): Function state mutability can be restricted to view
-  --> src/ArbitrationHook.sol:98:5:
-   |
-98 |     function onSubmitted(uint256 jobId) external {
-   |     ^ (Relevant source part starts here and spans across multiple lines).
-
+No files changed, compilation skipped
 Script ran successfully.
 
 == Logs ==
-  MockERC20: 0xe9ea3854bc57a49749c05190c577f4eCa9358861
-  Registry: 0x296d8DfDc0E306e3472a49CE5C9e0B7a68066881
-  ArbitrationHook: 0x61595999f64f73188F0C48db59698911491889B4
-  PrismSettleJob: 0x548b2385723b8b9EdeEd99ddaD7830F7212C27ff
+  MockERC20: 0x90570a62436E201570C58B19B99d6eF77f76a62D
+  Registry: 0x9B4F5056AB82d5E3b75D28a9288cFE754a3e84E9
+  ArbitrationHook: 0xa230ceb08D3dF2BAEeFF44260e9a118f96271eD8
+  PrismSettleJob: 0x4DD3275b169b386596034d2066430971A1F07f1e
   Evaluator: 0x8EB3Fe3dDe56Cab0CDf32db3e6E5bA865596BE2C
-  Facilitator: 0x0000000000000000000000000000000000000000
+  Facilitator: 0x7f6a2850669202519f0FE8aa912451238820Db86
 
 ## Setting up 1 EVM.
 
@@ -74,11 +66,11 @@ Script ran successfully.
 
 Chain 10143
 
-Estimated gas price: 204.994855161 gwei
+Estimated gas price: 203.048828126 gwei
 
-Estimated total gas used for script: 6149139
+Estimated total gas used for script: 10030052
 
-Estimated amount required: 1.260541858669856379 MON
+Estimated amount required: 2.036590304642842552 MON
 
 ==========================
 

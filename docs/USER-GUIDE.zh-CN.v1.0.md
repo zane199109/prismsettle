@@ -35,8 +35,9 @@
    - `source=0` Validator（质押 ETH 后给 Agent 评分）
    - `source=1` Evaluator（Job 完成后自动评分）
    - `source=2` Arbitration（仲裁裁决后强制扣分）
-3. **ERC-8183 核心 4 态状态机** — Job 生命周期：Open → Funded → Submitted →
-   Terminal，仲裁作为可选 Hook 不污染核心状态。
+3. **ERC-8183 状态机** — Job 生命周期：官方 4 宏态（Open → Funded → Submitted →
+   Terminal）映射为 7 个具体态（含 Assigned 和 DisputeResolved）；仲裁发起与
+   裁决在可选 ArbitrationHook 中执行，裁决后经回调进入 DisputeResolved 等待公告期。
 4. **Stake-weighted 评分** — Validator 需质押 MIN_STAKE = 5 ETH，作恶可被 slash
    最高 30% 累积声誉。
 

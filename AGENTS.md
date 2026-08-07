@@ -13,9 +13,16 @@
   Never revert to single-slot storage.
 - **jobId uses uint256** for keccak256 output compatibility and arithmetic
   operations. Do not switch to bytes32.
-- **ERC-8183 core 4-state machine** (Open/Funded/Submitted/Terminal) is
-  immutable. Arbitration is implemented as optional Hook contracts, never
-  pollute the core state machine.
+- **ERC-8183 state machine is immutable**: the official 4 macro-states
+  (Open/Funded/Submitted/Terminal) map onto 7 concrete `JobState` values
+  (`Created`, `Funded`, `Assigned`, `Submitted`, `DisputeResolved`,
+  `Completed`, `Refunded`). `Assigned` refines the pre-submit stage and
+  `DisputeResolved` is a settlement refinement of Terminal entered via
+  the `notifyDisputeResolved` callback from the Hook. Arbitration logic
+  (dispute, arbitrator selection, ruling) stays in the optional
+  ArbitrationHook contract, never in Job. After an `ANNOUNCEMENT_PERIOD`
+  (1 hour), anyone can call `executeArbitrationResult` to move to
+  Completed or Refunded.
 - **submitValidation signature** must include: `(agentId, score, proofHash,
   jobId, source)`. source values: 0=Validator, 1=Evaluator, 2=Arbitration.
 - **Testing must be split into two independent files**: `ArbitrationHook.t.sol`
@@ -31,6 +38,10 @@
   wholesale — no aliases, no re-exports, no shims.
 - **Any plan changes must be synchronized and confirmed by the user before
   execution.** Do not act without authorization.
+- **Deployment order must follow**: Token → Registry → Hook → Job →
+  Hook.setJobContract → Job.setRegistry → grantRoles → seed 4 agents
+  (0x1111~0x4444) → register Provider agent (0x5555) → register arbitrator.
+  Never deviate from this sequence.
 
 ## Review guidelines
 
@@ -45,7 +56,7 @@
 
 ### Contracts
 
-- After any contract change, run `forge test` — all 106 tests must pass.
+- After any contract change, run `forge test` — all 131 tests must pass.
 - `MIN_STAKE = 5 ether` (testnet-appropriate; PRD says 100 ether but 5 is the
   implemented value).
 - `MAX_VALIDATIONS_PER_EPOCH = 50` for Validator (source=0); Evaluator
@@ -55,6 +66,44 @@
 - Reputation decay: 30 days of inactivity triggers 0.01e18 daily penalty,
   calculated on read via `getScore`.
 - Arbitration penalty: `max(0.2e18, currentScore * 30%)`.
+- `createJob` includes `minProviderReputation` param — provider must have
+  score ≥ this threshold to `grabJob`. Frontend and contract both enforce
+  this check.
+- `grabJob(jobId, providerAgentId)` is the Provider self-assignment function.
+  Reverts if job is not in Funded state, already assigned, provider
+  reputation is below `minProviderReputation`, or the caller is the buyer
+  (anti self-dealing — prevents completion-reward farming).
+- **Reject / resubmit loop**: buyer may call `reject(jobId, reasonHash)`
+  (posts a reject deposit = amount × 5%) to request rework; the provider can
+  then `submit` again (Submitted → Submitted, resets `submittedAt` and the
+  dispute window). Rejects have no count limit — abuse is bounded by the
+  deposit and the provider's arbitration right.
+- `executeArbitrationResult` requires `ANNOUNCEMENT_PERIOD` (1 hour) after
+  `DisputeResolved` before execution. Payout is the **full escrow** to the
+  winner; the arbitrator fee is covered by forfeited deposits, never by escrow.
+- Registry has `setAggregatedScore(agentId, newScore)` for Evaluator to
+  manually set scores (used for arbitration source=2 results).
+- **Reputation dual-factor** in `aggregateEpoch` (source=3 Buyer ratings do
+  NOT enter the weighted average):
+  - Completion bonus: +0.005e18 per completed job, capped at +0.05e18/epoch
+    (activity incentive, anti-sybil).
+  - Rating nudge: (score − 0.5e18) × 0.05, capped at ±0.02e18/epoch
+    (reference signal, not a verdict).
+  - source=0/1/2 keep the EMA (fixed alpha = 0.3e18) weighted path; total
+    score is capped at 1e18.
+- ArbitrationHook implements an **arbitration pool with deposits**:
+  - `registerArbitrator(agentId, feeBps, feeRecipient)` — requires agent
+    reputation ≥ 0.7e18 (checked via Registry).
+  - `unregisterArbitrator()` — removes self from pool.
+  - Highest-reputation registered arbitrator is selected at dispute time.
+  - **Dispute**: either party (buyer OR provider) may call `dispute` within
+    `DISPUTE_WINDOW` (24h) of the latest submit. Both parties post a deposit
+    (amount × 5%, `DEPOSIT_BPS=500`).
+  - **Deposit settlement at resolveDispute**: the LOSING side's deposit(s)
+    pay the arbitrator (feeRecipient); the winner's deposit(s) are returned.
+    Reject deposits follow the same rule (forfeited if the buyer loses,
+    returned if the job settles without arbitration).
+  - `getArbitratorFeeConfig(jobId)` returns (feeBps, recipient).
 
 ### Offchain (Go)
 
@@ -81,48 +130,3 @@
 - Contract addresses centralized in `frontend/lib/contracts.ts`.
 - `next.config.js` `output: "standalone"` for Docker builds.
 - API rewrite default: `http://localhost:9527` (offchain service port).
-
-## Repo facts
-
-- **Monorepo structure**:
-  - `contracts/` — Solidity 0.8.24 + Foundry (106 tests)
-  - `offchain/` — Go 1.25, module `github.com/zane/web3-offchain`
-  - `frontend/` — Next.js 15 App Router + TypeScript (strict) + Tailwind v4
-  - `docs/` — PRD, SD, status review
-  - `scripts/` — deployment and verification scripts
-
-- **Contract architecture** (3 core contracts):
-  - `PrismSettleRegistry.sol` — Agent registration, staking, validation,
-    reputation aggregation (256-shard)
-  - `PrismSettleJob.sol` — ERC-8183 Job lifecycle (Created→Funded→Assigned→
-    Submitted→Completed/Refunded), x402 funding
-  - `ArbitrationHook.sol` — Dispute resolution (Disputed→DisputeResolved),
-    independent from Job state machine
-
-- **Offchain architecture** (single binary, port 9527):
-  - `internal/listener/` — EVM event listener with reorg detection + rollback
-  - `prismsettle/evaluator/` — Rule check + LLM semantic scoring + circuit
-    breaker
-  - `prismsettle/keeper/` — Periodic `aggregateEpoch` + decay trigger
-  - `prismsettle/service/` — 16+ REST API endpoints
-  - `agents/` — 4 standalone HTTP agent services (defi/data/trl/eval)
-  - `cmd/agent/` — Agent binary entry point
-
-- **Agent services** (4 HTTP servers, shared offchain image):
-  - `agent-defi` (port 9101) — DeFi analysis agent
-  - `agent-data` (port 9102) — Data labeling agent
-  - `agent-trl` (port 9103) — Translation agent
-  - `agent-eval` (port 9104) — Evaluation agent (scores deliverables)
-
-- **Docker Compose services**: postgres, redis, anvil (dev profile), offchain,
-  agent-defi, agent-data, agent-trl, agent-eval, frontend.
-
-- **Verification commands**:
-  - Contracts: `cd contracts && forge test`
-  - Offchain: `cd offchain && go test ./...`
-  - Frontend: `cd frontend && npx tsc --noEmit && npx eslint app components --quiet`
-  - Full stack: `docker compose up -d` (needs `.env` with contract addresses)
-
-- **Deployment sequence**: Hook (with job=0) → Job (with hook address) →
-  Hook.setJobContract(Job). Registry permission refactoring must be
-  prioritized before implementing Hook and Job contracts.

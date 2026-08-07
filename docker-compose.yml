@@ -125,10 +125,8 @@ services:
       PRISM_KEEPER_KEY: ${PRISM_KEEPER_KEY:-}
     env_file:
       - .env
-    # Override Dockerfile ENTRYPOINT — use dev-docker.yaml for local anvil testing.
-    entrypoint: ["/app/prismsettle", "-config", "/app/config/dev-docker.yaml"]
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    # Override Dockerfile ENTRYPOINT — use testnet-docker.yaml for Monad testnet.
+    entrypoint: ["/app/prismsettle", "-config", "/app/config/testnet-docker.yaml"]
     volumes:
       - ./offchain/config:/app/config:ro
       - ./logs/offchain:/app/logs
@@ -237,6 +235,107 @@ services:
     volumes:
       - ./offchain/config:/app/config:ro
     entrypoint: ["/app/prismsettle-agent", "--agent", "eval", "--config", "/app/config/agents.yaml"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  # ---------- 3 Auditor worker agents (compete to grab jobs by reputation) ----------
+  # Each runs the same offchain image with the prismsettle-worker binary.
+  # They connect to the offchain REST API and on-chain RPC to poll for jobs,
+  # check reputation, grab jobs, and submit mock deliverables.
+
+  agent-auditor-senior:
+    image: prismsettle/offchain:latest
+    container_name: prismsettle-auditor-senior
+    restart: always
+    networks: [prismsettle-net]
+    ports:
+      - "9105:9105"
+    environment:
+      TZ: UTC
+      AGENT_ID: "0x3333"
+      AGENT_PRIVATE_KEY: ${AUDITOR_SENIOR_KEY:-}
+      AGENT_POLL_INTERVAL: "10s"
+      AGENT_PORT: "9105"
+      RPC_URL: ${PRISM_RPC_URL:-http://anvil:8545}
+      CHAIN_ID: "10143"
+      OFFCHAIN_BASE_URL: "http://host.docker.internal:9527"
+      JOB_CONTRACT_ADDRESS: ${JOB_CONTRACT_ADDRESS:-}
+      REGISTRY_CONTRACT_ADDRESS: ${REGISTRY_CONTRACT_ADDRESS:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - .env
+    volumes:
+      - ./offchain/config:/app/config:ro
+      - ./logs/auditor-senior:/app/logs
+    entrypoint: ["/app/prismsettle-worker"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  agent-auditor-junior:
+    image: prismsettle/offchain:latest
+    container_name: prismsettle-auditor-junior
+    restart: always
+    networks: [prismsettle-net]
+    ports:
+      - "9106:9106"
+    environment:
+      TZ: UTC
+      AGENT_ID: "0x7777"
+      AGENT_PRIVATE_KEY: ${AUDITOR_JUNIOR_KEY:-}
+      AGENT_POLL_INTERVAL: "10s"
+      AGENT_PORT: "9106"
+      RPC_URL: ${PRISM_RPC_URL:-http://anvil:8545}
+      CHAIN_ID: "10143"
+      OFFCHAIN_BASE_URL: "http://host.docker.internal:9527"
+      JOB_CONTRACT_ADDRESS: ${JOB_CONTRACT_ADDRESS:-}
+      REGISTRY_CONTRACT_ADDRESS: ${REGISTRY_CONTRACT_ADDRESS:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - .env
+    volumes:
+      - ./offchain/config:/app/config:ro
+      - ./logs/auditor-junior:/app/logs
+    entrypoint: ["/app/prismsettle-worker"]
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
+  agent-auditor-rookie:
+    image: prismsettle/offchain:latest
+    container_name: prismsettle-auditor-rookie
+    restart: always
+    networks: [prismsettle-net]
+    ports:
+      - "9107:9107"
+    environment:
+      TZ: UTC
+      AGENT_ID: "0x8888"
+      AGENT_PRIVATE_KEY: ${AUDITOR_ROOKIE_KEY:-}
+      AGENT_POLL_INTERVAL: "10s"
+      AGENT_PORT: "9107"
+      RPC_URL: ${PRISM_RPC_URL:-http://anvil:8545}
+      CHAIN_ID: "10143"
+      OFFCHAIN_BASE_URL: "http://host.docker.internal:9527"
+      JOB_CONTRACT_ADDRESS: ${JOB_CONTRACT_ADDRESS:-}
+      REGISTRY_CONTRACT_ADDRESS: ${REGISTRY_CONTRACT_ADDRESS:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    env_file:
+      - .env
+    volumes:
+      - ./offchain/config:/app/config:ro
+      - ./logs/auditor-rookie:/app/logs
+    entrypoint: ["/app/prismsettle-worker"]
     logging:
       driver: json-file
       options:

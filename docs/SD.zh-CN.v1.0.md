@@ -42,7 +42,7 @@
 | 原则 | 说明 |
 |---|---|
 | **OCC 优先** | 合约存储布局以"消除 Monad OCC 写冲突"为第一性目标，所有热点写路径必须分片或延迟聚合 |
-| **核心 4 态纯净** | ERC-8183 核心 4 态（Open/Funded/Submitted/Terminal）严格对齐官方，仲裁逻辑全部封装到独立 ArbitrationHook |
+| **状态机对齐** | ERC-8183 官方 4 宏态（Open/Funded/Submitted/Terminal）映射为 7 个具体态（Created/Funded/Assigned/Submitted/DisputeResolved/Completed/Refunded），宏态严格对齐官方；仲裁发起与裁决逻辑封装到独立 ArbitrationHook，Job 仅在裁决后经回调进入 DisputeResolved 细化态 |
 | **fail-fast** | 配置缺失、依赖不可达等关键错误立即退出，不静默降级 |
 | **exactly-once 入库** | Indexer 通过 `nextExpected`/`completedTasks` 计数器保证事件不重复不丢失 |
 | **EIP-55 原值存储** | 链上地址以原始大小写形式入库，查询时 `LOWER()` 归一化 |
@@ -487,15 +487,22 @@ function aggregateEpoch(uint256 agentId) external {
     }
     uint256 weighted = totalWeight == 0 ? info.seedScore : weightedSum / totalWeight;
 
-    // 2. EMA smoothing: newScore = oldScore + alpha * (weighted - oldScore)
-    //    alpha = 1e18 / (1e18 + taskCount); larger taskCount => smaller change, avoids extreme single-rating swings
-    uint256 alpha = 1e18 / (1e18 + uint256(info.taskCount));
-    uint256 newScore;
-    if (weighted >= oldScore) {
-        newScore = oldScore + alpha * (weighted - oldScore) / 1e18;
-    } else {
-        newScore = oldScore - alpha * (oldScore - weighted) / 1e18;
+    // 2. EMA smoothing (source=0/1/2 only): newScore = oldScore + ALPHA * (weighted - oldScore)
+    //    ALPHA 固定 0.3e18（V1.1 变更：原 taskCount 动态 alpha 已废弃）
+    //    source=3（Buyer 评分）不参与加权平均，走双因子通道：
+    //      完成奖励 +0.005e18/单（epoch 封顶 +0.05e18）
+    //      评分微调 (score − 0.5e18) × 0.05（epoch 封顶 ±0.02e18）
+    uint256 newScore = oldScore;
+    if (totalWeight > 0) {
+        if (weighted >= oldScore) {
+            newScore = oldScore + ALPHA * (weighted - oldScore) / 1e18;
+        } else {
+            newScore = oldScore - ALPHA * (oldScore - weighted) / 1e18;
+        }
     }
+    // 双因子净调整（完成奖励 + 评分微调，各自封顶后合并；下限 0）
+    newScore = newScore + completionBonus + (ratingUp >= ratingDown ? ratingUp - ratingDown : 0)
+        - (ratingDown > ratingUp ? ratingDown - ratingUp : 0);
 
     // 3. Inactivity decay: after 30 days of inactivity, deduct 0.01e18 per day (anti "one-time high score forever")
     uint256 decayApplied = 0;
@@ -647,10 +654,14 @@ stateDiagram-v2
 
     note right of Submitted
         仲裁分支（仅 hook != 0）：
-        Submitted →[dispute]→ Disputed (Hook 内)
-        Disputed →[resolveDispute]→ DisputeResolved (Hook 内)
-        DisputeResolved →[claimRefund]→ Refunded (ruling=1, 不受 deadline 限)
-        DisputeResolved →[complete]→ Completed (ruling=2)
+        Submitted →[reject]→ Submitted（Buyer 拒收+意见，扣 reject 押金；
+            Provider 可二次 submit（重置仲裁窗口）或 dispute）
+        Submitted →[dispute]→ Disputed (Hook 内；Buyer/Provider 双方可发起，
+            24h 窗口内（自最近 submit），双方各押 amount×5%)
+        Disputed →[resolveDispute]→ DisputeResolved (Hook 内；败方押金没收
+            付仲裁方 feeRecipient，胜方押金退回；escrow 不动)
+        DisputeResolved →[executeArbitrationResult]→ Completed (ruling=2) /
+            Refunded (ruling=1)（escrow 全额给胜方；公告期后任何人可执行）
     end note
 
     Completed --> [*]
