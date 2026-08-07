@@ -38,6 +38,7 @@ export function TrustGate({ agentId, chainName, onDecisionChange }: Props) {
   if (isValidating && !result) {
     return (
       <div className="rounded-lg border border-white/10 bg-prism-surface/40 p-4">
+        <p className="mb-2 text-xs text-white/40">Checking trust score…</p>
         <div className="flex items-center gap-2">
           <Skeleton className="h-5 w-24" />
           <Skeleton className="ml-auto h-3.5 w-3.5" />
