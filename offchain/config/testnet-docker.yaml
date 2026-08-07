@@ -1,5 +1,5 @@
-# PrismSettle dev-docker config — connects Docker containers to local anvil.
-# postgres/redis use Docker service names; RPC goes via host.docker.internal.
+# PrismSettle testnet-docker config — connects Docker containers to Monad testnet.
+# postgres/redis use Docker service names; RPC points to testnet-rpc.monad.xyz.
 env: "dev"
 server:
   port: "9527"
@@ -44,16 +44,16 @@ redis:
 
 web3:
   chains:
-    # PrismSettleRegistry on local anvil
+    # PrismSettleRegistry on Monad testnet
     - chain_name: "monad_testnet"
       chain_type: "evm"
       abi_type: "erc20"
       rpc_urls:
-        - "http://host.docker.internal:8545"
-      contract_addr: "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"
+        - "https://testnet-rpc.monad.xyz"
+      contract_addr: "0x9B4F5056AB82d5E3b75D28a9288cFE754a3e84E9"
       contract_parser: PrismSettle
-      start_block: 1
-      confirmations: 0
+      start_block: 51678000
+      confirmations: 5
       decimals: 18
       workers: 2
       batch_size_db: 100
@@ -73,16 +73,16 @@ web3:
       native_symbol: "MON"
       native_decimals: 18
 
-    # PrismSettleJob on local anvil
+    # PrismSettleJob on Monad testnet
     - chain_name: "monad_testnet"
       chain_type: "evm"
       abi_type: "erc20"
       rpc_urls:
-        - "http://host.docker.internal:8545"
-      contract_addr: "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9"
+        - "https://testnet-rpc.monad.xyz"
+      contract_addr: "0x4DD3275b169b386596034d2066430971A1F07f1e"
       contract_parser: PrismSettleJob
-      start_block: 1
-      confirmations: 0
+      start_block: 51678000
+      confirmations: 5
       decimals: 18
       workers: 2
       batch_size_db: 100
@@ -102,16 +102,16 @@ web3:
       native_symbol: "MON"
       native_decimals: 18
 
-    # ArbitrationHook on local anvil
+    # ArbitrationHook on Monad testnet
     - chain_name: "monad_testnet"
       chain_type: "evm"
       abi_type: "erc20"
       rpc_urls:
-        - "http://host.docker.internal:8545"
-      contract_addr: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"
+        - "https://testnet-rpc.monad.xyz"
+      contract_addr: "0xa230ceb08D3dF2BAEeFF44260e9a118f96271eD8"
       contract_parser: PrismSettleHook
-      start_block: 1
-      confirmations: 0
+      start_block: 51678000
+      confirmations: 5
       decimals: 18
       workers: 2
       batch_size_db: 100
@@ -132,14 +132,16 @@ web3:
       native_decimals: 18
 
 evaluator:
-  private_key: "0d633a23c569763107254fb56e29c379cbae379b4ac697bed09af6eb5ba4f813"
-  evaluator_address: "0xcABFefeddd874AcABCc63bB1414194863a128250"
-  chain_id: 31337
+  # private_key is NOT hardcoded here — comes from PRISM_EVALUATOR_KEY env var.
+  # The main.go reads it via os.Getenv("PRISM_EVALUATOR_KEY") and overrides.
+  private_key: ""
+  evaluator_address: "0xcc6142f3f79Dd1d42FC0446C5B7218C5F520021E"
+  chain_id: 10143
   chain_name: "monad_testnet"
-  rpc_url: "http://host.docker.internal:8545"
-  registry_addr: "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512"
-  job_addr: "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9"
-  hook_addr: "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"
+  rpc_url: "https://testnet-rpc.monad.xyz"
+  registry_addr: "0x9B4F5056AB82d5E3b75D28a9288cFE754a3e84E9"
+  job_addr: "0x4DD3275b169b386596034d2066430971A1F07f1e"
+  hook_addr: "0xa230ceb08D3dF2BAEeFF44260e9a118f96271eD8"
   poll_interval: 2
   batch_size: 20
   keeper_tick_sec: 30

@@ -59,6 +59,17 @@ func (r *RegistryWriterBinding) SubmitValidation(
 	return tx.Hash().Hex(), nil
 }
 
+// SetAggregatedScore calls Registry.setAggregatedScore(agentId, newScore).
+// Returns the tx hash hex. Used by the arbitration path to apply penalty
+// scores directly to a provider's aggregated reputation (FR-E13).
+func (r *RegistryWriterBinding) SetAggregatedScore(ctx context.Context, agentID *big.Int, newScore uint64) (string, error) {
+	tx, err := r.contract.bind.Transact(r.auth, "setAggregatedScore", agentID, newScore)
+	if err != nil {
+		return "", fmt.Errorf("set aggregated score transact: %w", err)
+	}
+	return tx.Hash().Hex(), nil
+}
+
 // parseBytes32 converts a 0x-prefixed 64-char hex string to common.Hash.
 // Accepts both 0x-prefixed and unprefixed forms; pads/truncates to 32 bytes.
 func parseBytes32(s string) (common.Hash, error) {

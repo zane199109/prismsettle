@@ -36,12 +36,20 @@ const (
 	TypePrismJobFunded    EventType = "PRISM_JOB_FUNDED"
 	TypePrismJobAssigned  EventType = "PRISM_JOB_ASSIGNED"
 	TypePrismJobSubmitted EventType = "PRISM_JOB_SUBMITTED"
+	TypePrismJobRejected  EventType = "PRISM_JOB_REJECTED"
 	TypePrismJobCompleted EventType = "PRISM_JOB_COMPLETED"
 	TypePrismJobRefunded  EventType = "PRISM_JOB_REFUNDED"
 
 	// ArbitrationHook events.
-	TypePrismDisputed        EventType = "PRISM_DISPUTED"
-	TypePrismDisputeResolved EventType = "PRISM_DISPUTE_RESOLVED"
+	TypePrismDisputed                 EventType = "PRISM_DISPUTED"
+	TypePrismDisputeResolved          EventType = "PRISM_DISPUTE_RESOLVED"
+	TypePrismArbitratorRegistered     EventType = "PRISM_ARBITRATOR_REGISTERED"
+	TypePrismArbitratorUnregistered   EventType = "PRISM_ARBITRATOR_UNREGISTERED"
+	TypePrismArbitratorSelected       EventType = "PRISM_ARBITRATOR_SELECTED"
+
+	// PrismSettleJob announcement + arbitration execution events.
+	TypePrismDisputeResolvedAnnounced EventType = "PRISM_DISPUTE_RESOLVED_ANNOUNCED"
+	TypePrismArbitrationExecuted      EventType = "PRISM_ARBITRATION_EXECUTED"
 )
 
 // Transfer transfer event struct

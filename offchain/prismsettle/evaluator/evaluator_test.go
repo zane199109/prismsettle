@@ -9,65 +9,6 @@ import (
 	"time"
 )
 
-// ===== RuleCheck tests (FR-E02 ~ FR-E05) =====
-
-func TestRuleCheck_AllPass(t *testing.T) {
-	rc := NewRuleCheck("") // no IPFS gateway → reachability skipped
-	job := SubmittedJob{
-		JobID:           "1",
-		Provider:        "0xABC",
-		Submitter:       "0xABC",
-		DeliverableHash: "0x" + repeat("ab", 32),
-		ProofHash:       "0x" + repeat("cd", 32),
-	}
-	res := rc.Check(context.Background(), job)
-	if !res.OK {
-		t.Fatalf("expected OK, got %s (skip=%v)", res.Reason, res.Skip)
-	}
-}
-
-func TestRuleCheck_EmptyDeliverable(t *testing.T) {
-	rc := NewRuleCheck("")
-	job := SubmittedJob{JobID: "1", Provider: "0xABC", Submitter: "0xABC"}
-	res := rc.Check(context.Background(), job)
-	if res.OK {
-		t.Fatal("expected failure on empty deliverable")
-	}
-	if res.Skip {
-		t.Fatal("empty deliverable should reject, not skip")
-	}
-}
-
-func TestRuleCheck_SubmitterMismatch(t *testing.T) {
-	rc := NewRuleCheck("")
-	job := SubmittedJob{
-		JobID:           "1",
-		Provider:        "0xABC",
-		Submitter:       "0xDEF",
-		DeliverableHash: "0x" + repeat("ab", 32),
-		ProofHash:       "0x" + repeat("cd", 32),
-	}
-	res := rc.Check(context.Background(), job)
-	if res.OK {
-		t.Fatal("expected failure on submitter mismatch")
-	}
-}
-
-func TestRuleCheck_ZeroProofHash(t *testing.T) {
-	rc := NewRuleCheck("")
-	job := SubmittedJob{
-		JobID:           "1",
-		Provider:        "0xABC",
-		Submitter:       "0xABC",
-		DeliverableHash: "0x" + repeat("ab", 32),
-		ProofHash:       "0x" + repeat("0", 32),
-	}
-	res := rc.Check(context.Background(), job)
-	if res.OK {
-		t.Fatal("expected failure on zero proofHash")
-	}
-}
-
 // ===== Circuit Breaker tests =====
 
 func TestCircuitBreaker_ClosedToOpen(t *testing.T) {
@@ -197,7 +138,7 @@ func TestEvalAgentClient_FallbackOnUnreachable(t *testing.T) {
 	}
 }
 
-// ===== Evaluator idempotency + main path =====
+// ===== Evaluator arbitration path tests =====
 //
 // We drive the Evaluator with fake implementations of every dependency so we
 // can assert on side effects without a live chain or LLM.
@@ -205,22 +146,14 @@ func TestEvalAgentClient_FallbackOnUnreachable(t *testing.T) {
 // fakeEventSource feeds pre-seeded jobs and tracks calls.
 type fakeEventSource struct {
 	mu        sync.Mutex
-	submitted []SubmittedJob
 	disputed  []DisputedJob
 	providers map[string]string // jobID → provider
 	agentIDs  map[string]string // provider → agentID
 	scores    map[string]uint64 // agentID → current score
 
-	submittedCalls int
-	disputedCalls  int
+	disputedCalls int
 }
 
-func (f *fakeEventSource) RecentSubmitted(ctx context.Context, since time.Time, limit int) ([]SubmittedJob, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.submittedCalls++
-	return f.submitted, nil
-}
 func (f *fakeEventSource) RecentDisputed(ctx context.Context, since time.Time, limit int) ([]DisputedJob, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -251,25 +184,13 @@ func (f *fakeEventSource) CurrentScore(ctx context.Context, agentID *big.Int) (u
 	return f.scores[agentID.String()], nil
 }
 
-// fakeJobCompleter records complete() calls.
-type fakeJobCompleter struct {
-	mu     sync.Mutex
-	calls  []string
-	txHash string
-}
-
-func (f *fakeJobCompleter) Complete(ctx context.Context, jobID *big.Int) (string, error) {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.calls = append(f.calls, jobID.String())
-	return f.txHash, nil
-}
-
-// fakeRegistryWriter records submitValidation() calls.
+// fakeRegistryWriter records submitValidation() and setAggregatedScore() calls.
 type fakeRegistryWriter struct {
 	mu     sync.Mutex
 	calls  []fakeSubmit
 	txHash string
+	// aggCalls records setAggregatedScore invocations.
+	aggCalls []fakeAggScore
 }
 type fakeSubmit struct {
 	AgentID   string
@@ -277,6 +198,10 @@ type fakeSubmit struct {
 	ProofHash string
 	JobID     string
 	Source    uint8
+}
+type fakeAggScore struct {
+	AgentID string
+	Score   uint64
 }
 
 func (f *fakeRegistryWriter) SubmitValidation(ctx context.Context, agentID *big.Int, score uint64, proofHash string, jobID *big.Int, source uint8) (string, error) {
@@ -288,6 +213,16 @@ func (f *fakeRegistryWriter) SubmitValidation(ctx context.Context, agentID *big.
 		ProofHash: proofHash,
 		JobID:     jobID.String(),
 		Source:    source,
+	})
+	return f.txHash, nil
+}
+
+func (f *fakeRegistryWriter) SetAggregatedScore(ctx context.Context, agentID *big.Int, newScore uint64) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.aggCalls = append(f.aggCalls, fakeAggScore{
+		AgentID: agentID.String(),
+		Score:   newScore,
 	})
 	return f.txHash, nil
 }
@@ -354,59 +289,6 @@ func (m *memoryDecisionStore) Recent(ctx context.Context, limit int) ([]Decision
 	return m.logs, nil
 }
 
-func TestEvaluator_MainPathIdempotency(t *testing.T) {
-	src := &fakeEventSource{
-		submitted: []SubmittedJob{{
-			JobID:           "1",
-			Provider:        "0xABC",
-			Submitter:       "0xABC",
-			DeliverableHash: "0x" + repeat("ab", 32),
-			ProofHash:       "0x" + repeat("cd", 32),
-		}},
-		providers: map[string]string{"1": "0xABC"},
-		agentIDs:  map[string]string{"0xABC": "100"},
-		scores:    map[string]uint64{"100": 500_000_000_000_000_000},
-	}
-	job := &fakeJobCompleter{txHash: "0xJOB1"}
-	reg := &fakeRegistryWriter{txHash: "0xREG1"}
-	hook := &fakeHookResolver{txHash: "0xHOOK1"}
-	logs := &memoryDecisionStore{}
-
-	// EvalAgentClient points at a dead port → fallback score 0.6e18.
-	e, err := NewEvaluator(Config{PollInterval: 50 * time.Millisecond}, src, job, reg, hook, logs,
-		func(ctx context.Context, id *big.Int) (uint64, error) { return 0, nil })
-	if err != nil {
-		t.Fatalf("NewEvaluator: %v", err)
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-	defer cancel()
-	_ = e.Run(ctx)
-
-	// 1. complete() called exactly once (idempotency).
-	if len(job.calls) != 1 {
-		t.Errorf("expected 1 complete call, got %d", len(job.calls))
-	}
-	// 2. submitValidation called exactly once with source=1.
-	if len(reg.calls) != 1 {
-		t.Fatalf("expected 1 submitValidation call, got %d", len(reg.calls))
-	}
-	if reg.calls[0].Source != SourceEvaluatorMain {
-		t.Errorf("expected source=1, got %d", reg.calls[0].Source)
-	}
-	// 3. Fallback score recorded.
-	if reg.calls[0].Score != FallbackScore {
-		t.Errorf("expected fallback score, got %d", reg.calls[0].Score)
-	}
-	// 4. Decision log inserted.
-	if len(logs.logs) != 1 {
-		t.Fatalf("expected 1 decision log, got %d", len(logs.logs))
-	}
-	if logs.logs[0].Source != SourceEvaluatorMain {
-		t.Errorf("expected source=1 log, got %d", logs.logs[0].Source)
-	}
-}
-
 func TestEvaluator_ArbPath(t *testing.T) {
 	deliverable := "0x" + repeat("ab", 32)
 	src := &fakeEventSource{
@@ -421,12 +303,11 @@ func TestEvaluator_ArbPath(t *testing.T) {
 		agentIDs:  map[string]string{"0xABC": "200"},
 		scores:    map[string]uint64{"200": 1_000_000_000_000_000_000},
 	}
-	job := &fakeJobCompleter{}
 	reg := &fakeRegistryWriter{txHash: "0xREG2"}
 	hook := &fakeHookResolver{txHash: "0xHOOK2"}
 	logs := &memoryDecisionStore{}
 
-	e, err := NewEvaluator(Config{PollInterval: 50 * time.Millisecond}, src, job, reg, hook, logs,
+	e, err := NewEvaluator(Config{PollInterval: 50 * time.Millisecond}, src, reg, hook, logs,
 		func(ctx context.Context, id *big.Int) (uint64, error) {
 			return 1_000_000_000_000_000_000, nil
 		})
@@ -445,16 +326,13 @@ func TestEvaluator_ArbPath(t *testing.T) {
 	if hook.calls[0].Ruling != 1 {
 		t.Errorf("expected ruling=1 (buyer wins), got %d", hook.calls[0].Ruling)
 	}
-	// 2. submitValidation called once with source=2.
-	if len(reg.calls) != 1 {
-		t.Fatalf("expected 1 submitValidation call, got %d", len(reg.calls))
-	}
-	if reg.calls[0].Source != SourceEvaluatorArb {
-		t.Errorf("expected source=2, got %d", reg.calls[0].Source)
+	// 2. setAggregatedScore called once.
+	if len(reg.aggCalls) != 1 {
+		t.Fatalf("expected 1 setAggregatedScore call, got %d", len(reg.aggCalls))
 	}
 	// 3. Penalty score = max(0.2e18, 1e18*30%) = 0.3e18.
-	if reg.calls[0].Score != 300_000_000_000_000_000 {
-		t.Errorf("expected 0.3e18 penalty, got %d", reg.calls[0].Score)
+	if reg.aggCalls[0].Score != 300_000_000_000_000_000 {
+		t.Errorf("expected 0.3e18 penalty, got %d", reg.aggCalls[0].Score)
 	}
 }
 
@@ -462,26 +340,22 @@ func TestEvaluator_ReorgClearsProcessedJobs(t *testing.T) {
 	logs := &memoryDecisionStore{}
 	logs.Insert(context.Background(), &DecisionLog{
 		JobID:    "99",
-		Source:   SourceEvaluatorMain,
-		Decision: DecisionComplete,
+		Source:   SourceEvaluatorArb,
+		Decision: DecisionDisputeResolved,
 	})
 	src := &fakeEventSource{providers: map[string]string{}, agentIDs: map[string]string{}, scores: map[string]uint64{}}
 	e, err := NewEvaluator(Config{PollInterval: 50 * time.Millisecond}, src,
-		&fakeJobCompleter{}, &fakeRegistryWriter{}, &fakeHookResolver{}, logs,
+		&fakeRegistryWriter{}, &fakeHookResolver{}, logs,
 		func(ctx context.Context, id *big.Int) (uint64, error) { return 0, nil })
 	if err != nil {
 		t.Fatalf("NewEvaluator: %v", err)
 	}
 
-	// Mark processed, then reorg should clear it.
-	e.processedJobs["99"] = true
+	// Reorg should mark the arbitration decision as invalid.
 	e.OnReorg(context.Background(), []string{"99"})
-	if e.processedJobs["99"] {
-		t.Fatal("reorg should clear processedJobs entry")
-	}
-	has, _ := logs.HasDecision(context.Background(), "99", SourceEvaluatorMain)
+	has, _ := logs.HasDecision(context.Background(), "99", SourceEvaluatorArb)
 	if has {
-		t.Fatal("reorg should mark decision invalid")
+		t.Fatal("reorg should mark arbitration decision invalid")
 	}
 }
 

@@ -30,7 +30,8 @@ COPY . .
 # CGO disabled + ldflags -s -w to strip debug info → smaller image.
 ENV CGO_ENABLED=0 GOOS=linux
 RUN go build -trimpath -ldflags="-s -w" -o /out/prismsettle ./cmd && \
-    go build -trimpath -ldflags="-s -w" -o /out/prismsettle-agent ./cmd/agent
+    go build -trimpath -ldflags="-s -w" -o /out/prismsettle-agent ./cmd/agent && \
+    go build -trimpath -ldflags="-s -w" -o /out/prismsettle-worker ./cmd/worker
 
 # ---------- Stage 2: runtime ----------
 FROM alpine:3.20
@@ -45,6 +46,7 @@ WORKDIR /app
 
 COPY --from=builder /out/prismsettle /app/prismsettle
 COPY --from=builder /out/prismsettle-agent /app/prismsettle-agent
+COPY --from=builder /out/prismsettle-worker /app/prismsettle-worker
 
 # Config is mounted from ./offchain/config via docker-compose.
 # Logs are written to /app/logs (mounted volume).

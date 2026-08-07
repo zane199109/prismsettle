@@ -101,13 +101,13 @@ type RedisConfig struct {
 
 // Web3 config
 type ChainConfig struct {
-	ChainName      string   `mapstructure:"chain_name"`
-	ChainType      string   `mapstructure:"chain_type"`
+	ChainName      string   `mapstructure:"chain_name"`      // Physical network name, e.g. "monad_testnet"
+	ChainType      string   `mapstructure:"chain_type"`      // "evm"
 	RPCUrls        []string `mapstructure:"rpc_urls"`        // Multi-RPC nodes
 	AbiType        string   `mapstructure:"abi_type"`        // ABI type
 	ContractAddr   string   `mapstructure:"contract_addr"`   // Contract address
-	ContractParser string   `mapstructure:"contract_parser"` // Contract parser
-	StartBlock     uint64   `mapstructure:"start_block"`     // Start block
+	ContractParser string   `mapstructure:"contract_parser"` // Contract parser name
+	StartBlock     uint64   `mapstructure:"start_block"`     // Start block for this contract
 	Workers        int      `mapstructure:"workers"`         // Concurrent goroutine count
 	BatchSizeDb    int      `mapstructure:"batch_size_db"`   // Batch insert count
 	BatchSizeSync  int      `mapstructure:"batch_size_sync"` // Batch sync block count

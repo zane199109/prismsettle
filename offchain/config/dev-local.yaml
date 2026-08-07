@@ -1,0 +1,137 @@
+# Local dev config — connects to Docker postgres/redis via exposed ports.
+# Run: go run ./cmd/... -config ../config/dev-local.yaml
+env: "dev"
+server:
+  port: "9527"
+  mode: "debug"
+  log_path: "/tmp/prismsettle-logs"
+  read_timeout: 30
+  write_timeout: 30
+  idle_timeout: 120
+  shutdown_listener_timeout: 20
+  shutdown_httpserver_timeout: 20
+
+rate_limit:
+  per_minute: 120
+  daily_limit: 100000
+
+auth:
+  tokens: ["dev-token"]
+
+postgres:
+  host: "127.0.0.1"
+  port: 5433
+  user: "prism"
+  password: "prism@2026"
+  dbname: "prismsettle"
+  max_idle_conns: 10
+  max_open_conns: 50
+  conn_max_lifetime: 3600s
+
+redis:
+  host: "127.0.0.1"
+  port: 6380
+  password: ""
+  db: 0
+  pool_size: 10
+  timeout: 5
+
+web3:
+  chains:
+    # PrismSettleRegistry on Monad testnet
+    - chain_name: "monad_testnet"
+      chain_type: "evm"
+      abi_type: "erc20"
+      rpc_urls:
+        - "https://testnet-rpc.monad.xyz"
+      contract_addr: "0x9B4F5056AB82d5E3b75D28a9288cFE754a3e84E9"
+      contract_parser: PrismSettle
+      start_block: 51678000
+      workers: 5
+      batch_size_db: 200
+      batch_size_sync: 100
+      confirmations: 3
+      timeout: 30
+      decimals: 18
+      sync_interval: 1000
+      commit_step: 10
+      block_cache_size: 1000
+      reorg_min_depth: 3
+      task_queue_size: 100
+      task_backpressure_seconds: 30
+      task_send_retry_ms: 100
+      block_number_retry_seconds: 5
+      permanent_failure_sleep_seconds: 60
+      lock_expiration_seconds: 30
+      max_sync_retries: 5
+      native_symbol: "MON"
+      native_decimals: 18
+
+    # PrismSettleJob on Monad testnet
+    - chain_name: "monad_testnet"
+      chain_type: "evm"
+      abi_type: "erc20"
+      rpc_urls:
+        - "https://testnet-rpc.monad.xyz"
+      contract_addr: "0x4DD3275b169b386596034d2066430971A1F07f1e"
+      contract_parser: PrismSettleJob
+      start_block: 51678000
+      workers: 5
+      batch_size_db: 200
+      batch_size_sync: 100
+      confirmations: 3
+      timeout: 30
+      decimals: 18
+      sync_interval: 1000
+      commit_step: 10
+      block_cache_size: 1000
+      reorg_min_depth: 3
+      task_queue_size: 100
+      task_backpressure_seconds: 30
+      task_send_retry_ms: 100
+      block_number_retry_seconds: 5
+      permanent_failure_sleep_seconds: 60
+      lock_expiration_seconds: 30
+      max_sync_retries: 5
+      native_symbol: "MON"
+      native_decimals: 18
+
+    # ArbitrationHook on Monad testnet
+    - chain_name: "monad_testnet"
+      chain_type: "evm"
+      abi_type: "erc20"
+      rpc_urls:
+        - "https://testnet-rpc.monad.xyz"
+      contract_addr: "0xa230ceb08D3dF2BAEeFF44260e9a118f96271eD8"
+      contract_parser: PrismSettleHook
+      start_block: 51678000
+      workers: 5
+      batch_size_db: 200
+      batch_size_sync: 100
+      confirmations: 3
+      timeout: 30
+      decimals: 18
+      sync_interval: 1000
+      commit_step: 10
+      block_cache_size: 1000
+      reorg_min_depth: 3
+      task_queue_size: 100
+      task_backpressure_seconds: 30
+      task_send_retry_ms: 100
+      block_number_retry_seconds: 5
+      permanent_failure_sleep_seconds: 60
+      lock_expiration_seconds: 30
+      max_sync_retries: 5
+      native_symbol: "MON"
+      native_decimals: 18
+
+evaluator:
+  chain_id: 10143
+  chain_name: "monad_testnet"
+  rpc_url: "https://testnet-rpc.monad.xyz"
+  registry_addr: "0x9B4F5056AB82d5E3b75D28a9288cFE754a3e84E9"
+  job_addr: "0x4DD3275b169b386596034d2066430971A1F07f1e"
+  hook_addr: "0xa230ceb08D3dF2BAEeFF44260e9a118f96271eD8"
+  poll_interval: 2
+  batch_size: 20
+  keeper_tick_sec: 30

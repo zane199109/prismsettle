@@ -114,6 +114,13 @@ func main() {
 		reorgEventRepo, perfResultRepo,
 	)
 
+	// Allow PRISM_EVALUATOR_KEY env var to override the yaml config value.
+	// This lets us keep the private key out of the version-controlled config file.
+	// The docker-compose.yml passes PRISM_EVALUATOR_KEY from .env.
+	if envKey := os.Getenv("PRISM_EVALUATOR_KEY"); envKey != "" {
+		config.Cfg.Evaluator.PrivateKey = envKey
+	}
+
 	// 9b. initialize Evaluator + Keeper (Phase 6 bots, wired in Phase 9 P0-A).
 	//
 	// The bots are only started when evaluator.registry_addr is configured.
@@ -142,9 +149,8 @@ func main() {
 			logger.Fatal("build evaluator transactor failed", logger.Error(err))
 		}
 
-		// Construct the 5 chainbinding implementations.
+		// Construct the 4 chainbinding implementations.
 		regAddr := common.HexToAddress(evCfg.RegistryAddr)
-		jobAddr := common.HexToAddress(evCfg.JobAddr)
 		hookAddr := common.HexToAddress(evCfg.HookAddr)
 
 		registryAggregator, err := chainbinding.NewRegistryAggregator(
@@ -156,11 +162,6 @@ func main() {
 		)
 		if err != nil {
 			logger.Fatal("build registry aggregator failed", logger.Error(err))
-		}
-
-		jobCompleter, err := chainbinding.NewJobCompleter(jobAddr, ethClient, auth)
-		if err != nil {
-			logger.Fatal("build job completer failed", logger.Error(err))
 		}
 
 		registryWriter, err := chainbinding.NewRegistryWriter(regAddr, ethClient, auth)
@@ -190,19 +191,17 @@ func main() {
 			logger.Fatal("automigrate decision_logs failed", logger.Error(err))
 		}
 
-		// Evaluator: polls Submitted + Disputed events, calls complete /
-		// submitValidation / resolveDispute.
+		// Evaluator: polls Disputed events and resolves disputes via
+		// resolveDispute / setAggregatedScore.
 		evaluatorInst, err := evaluator.NewEvaluator(
 			evaluator.Config{
 				PollInterval:     time.Duration(evCfg.PollInterval) * time.Second,
 				BatchSize:        evCfg.BatchSize,
-				IPFSGateway:      "", // TODO: wire from config when IPFS support is added
 				EvalEndpoint:     "", // TODO: wire from config when eval agent is deployed
 				BreakerThreshold: 10,
 				BreakerCooldown:  60 * time.Second,
 			},
 			eventSource,
-			jobCompleter,
 			registryWriter,
 			hookResolver,
 			decisionStore,

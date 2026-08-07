@@ -79,3 +79,34 @@ func newBoundContract(addr common.Address, abiJSON string, client *ethclient.Cli
 		bind: bind.NewBoundContract(addr, parsed, client, client, client),
 	}, nil
 }
+
+// BoundContract is an exported wrapper around boundContract, exposing the
+// underlying *bind.BoundContract for direct use by external consumers (e.g.
+// the worker agent).
+type BoundContract struct {
+	inner boundContract
+}
+
+// NewBoundContract builds an exported BoundContract wrapper.
+func NewBoundContract(addr common.Address, abiJSON string, client *ethclient.Client) (*BoundContract, error) {
+	bc, err := newBoundContract(addr, abiJSON, client)
+	if err != nil {
+		return nil, err
+	}
+	return &BoundContract{inner: bc}, nil
+}
+
+// Raw returns the underlying *bind.BoundContract for direct Call/Transact usage.
+func (b *BoundContract) Raw() *bind.BoundContract {
+	return b.inner.bind
+}
+
+// JobABI returns the job contract ABI JSON string.
+func JobABI() string {
+	return jobABI
+}
+
+// RegistryABI returns the registry contract ABI JSON string.
+func RegistryABI() string {
+	return registryABI
+}

@@ -29,3 +29,4 @@ dist/
 # Local docker-compose backups
 docker-compose copy.yml
 docker-compose*.bak
+worker

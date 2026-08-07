@@ -82,6 +82,12 @@ func normalizeHash(h string) string {
 	return strings.ToLower(strings.TrimSpace(h))
 }
 
+// isZeroHash returns true if the hex string (0x-prefixed) is all zeros.
+func isZeroHash(h string) bool {
+	h = strings.TrimPrefix(strings.ToLower(h), "0x")
+	return strings.TrimLeft(h, "0") == ""
+}
+
 // DisputedJob is the input to the arbitration path: everything the Evaluator
 // needs from a Disputed event + job lookup.
 type DisputedJob struct {
@@ -109,10 +115,14 @@ type HookResolver interface {
 	ResolveDispute(ctx context.Context, jobID *big.Int, ruling uint8) (string, error)
 }
 
-// RegistryWriter is the on-chain interface for submitValidation.
+// RegistryWriter is the on-chain interface for submitValidation and
+// setAggregatedScore.
 type RegistryWriter interface {
 	// SubmitValidation calls Registry.submitValidation(agentId, score, proofHash, jobId, source).
 	SubmitValidation(ctx context.Context, agentID *big.Int, score uint64, proofHash string, jobID *big.Int, source uint8) (string, error)
+	// SetAggregatedScore calls Registry.setAggregatedScore(agentId, newScore).
+	// Used by the arbitration path to set penalty scores directly (FR-E13).
+	SetAggregatedScore(ctx context.Context, agentID *big.Int, newScore uint64) (string, error)
 }
 
 // NewArbitrator builds an Arbitrator.
@@ -125,7 +135,7 @@ func NewArbitrator(rule *ArbitrationRule, hook HookResolver, registry RegistryWr
 //  2. Compute ruling via FR-E09.
 //  3. Compute penalty score via FR-E13.
 //  4. Call resolveDispute(jobId, ruling) on the Hook.
-//  5. Call submitValidation(provider, score, proofHash, jobId, source=2) on the Registry.
+//  5. Call setAggregatedScore(provider, score) on the Registry (FR-E13).
 //  6. Record a decision_log row with source=2.
 //
 // Idempotency: the Evaluator checks HasDecision(jobId, source=2) before
@@ -152,13 +162,12 @@ func (a *Arbitrator) Decide(ctx context.Context, job DisputedJob, providerAgentI
 		return fmt.Errorf("arbitration: resolveDispute: %w", err)
 	}
 
-	// 2. submitValidation on Registry (source=2).
-	// proofHash for arbitration = keccak256(ruling || reasonHash) so each
-	// arbitration is content-addressed. We pass the rule reason as the proof
-	// for auditability; the contract only stores the hash.
-	proofHash := makeArbitrationProofHash(ruling, job.ReasonHash)
-	if _, err := a.registry.SubmitValidation(ctx, providerAgentID, score, proofHash, jobIDInt, SourceEvaluatorArb); err != nil {
-		return fmt.Errorf("arbitration: submitValidation: %w", err)
+	// 2. setAggregatedScore on Registry (FR-E13: arbitration penalty).
+	// Uses setAggregatedScore instead of submitValidation because the
+	// arbitration result is a penalty applied directly to the provider's
+	// aggregated score, not a validation record.
+	if _, err := a.registry.SetAggregatedScore(ctx, providerAgentID, score); err != nil {
+		return fmt.Errorf("arbitration: setAggregatedScore: %w", err)
 	}
 
 	// 3. Record decision log.
@@ -176,13 +185,6 @@ func (a *Arbitrator) Decide(ctx context.Context, job DisputedJob, providerAgentI
 		logger.Errorf("arbitration: insert decision log failed", logger.Error(err))
 	}
 	return nil
-}
-
-// makeArbitrationProofHash builds a 0x-prefixed bytes32 proof hash for the
-// arbitration decision. We hash (ruling || reasonHash) so identical disputes
-// yield identical proof hashes.
-func makeArbitrationProofHash(ruling uint8, reasonHash string) string {
-	return "0x" + fmt.Sprintf("%02x", ruling) + normalizeHash(reasonHash)[2:]
 }
 
 // RoleResolverHex returns the hex hash of RESOLVER_ROLE, used in decision_logs.

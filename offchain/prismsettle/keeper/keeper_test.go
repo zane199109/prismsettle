@@ -53,6 +53,12 @@ func (f *fakeRegistry) TickDecay(ctx context.Context, agentID string) (string, e
 	f.decays = append(f.decays, agentID)
 	return "0xDECAY", nil
 }
+func (f *fakeRegistry) SetAggregatedScore(ctx context.Context, agentID string, newScore uint64) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.aggregates = append(f.aggregates, agentID)
+	return "0xSET", nil
+}
 
 func TestKeeper_AggregateBatch(t *testing.T) {
 	reg := &fakeRegistry{pending: []string{"1", "2", "3"}}

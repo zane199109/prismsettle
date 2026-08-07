@@ -9,7 +9,7 @@ import (
 	"github.com/zane/web3-offchain/model"
 )
 
-// Job/Hook parser tests cover all 8 events (6 Job + 2 Hook) plus malformed
+// Job/Hook parser tests cover all events (8 Job + 5 Hook) plus malformed
 // inputs. Follows the same pattern as prismsettle_parser_test.go.
 
 func TestPrismSettleJobParser_Name(t *testing.T) {
@@ -32,6 +32,8 @@ func TestPrismSettleJobParser_Match(t *testing.T) {
 		{"Submitted", EventSubmittedSig, true},
 		{"Completed", EventCompletedSig, true},
 		{"Refunded", EventRefundedSig, true},
+		{"DisputeResolvedAnnounced", EventDisputeResolvedAnnouncedSig, true},
+		{"ArbitrationExecuted", EventArbitrationExecutedSig, true},
 		{"unknown", common.HexToHash("0xdead"), false},
 	}
 	for _, c := range cases {
@@ -52,13 +54,15 @@ func TestPrismSettleJobParser_ParseJobCreated(t *testing.T) {
 	buyer := common.HexToAddress("0xBA5E")
 	deadline := uint64(2_000_000_000)
 	hook := common.HexToAddress("0xH00K")
+	minRep := uint64(0.7e18)
 
-	// Layout: buyer(32) | deadline(32) | hook(32) = 96 bytes
+	// Layout: buyer(32) | deadline(32) | hook(32) | minProviderReputation(32) = 128 bytes
 	// Solidity ABI right-aligns addresses in 32-byte slots.
-	data := make([]byte, 96)
+	data := make([]byte, 128)
 	copy(data[12:32], buyer.Bytes())
 	new(big.Int).SetUint64(deadline).FillBytes(data[32:64])
 	copy(data[76:96], hook.Bytes())
+	new(big.Int).SetUint64(minRep).FillBytes(data[96:128])
 
 	log := types.Log{
 		Address: common.HexToAddress("0xJobContract"),
@@ -105,7 +109,6 @@ func TestPrismSettleJobParser_ParseFunded(t *testing.T) {
 	amount := big.NewInt(1_000_000_000_000_000_000) // 1 ether
 
 	// Layout: buyer(32) | amount(32) = 64 bytes
-	// Solidity ABI right-aligns addresses in 32-byte slots.
 	data := make([]byte, 64)
 	copy(data[12:32], buyer.Bytes())
 	amount.FillBytes(data[32:64])
@@ -145,7 +148,6 @@ func TestPrismSettleJobParser_ParseAssigned(t *testing.T) {
 	jobID := big.NewInt(101)
 	provider := common.HexToAddress("0xPR0V")
 
-	// Solidity ABI right-aligns addresses in 32-byte slots.
 	data := make([]byte, 32)
 	copy(data[12:32], provider.Bytes())
 
@@ -182,7 +184,6 @@ func TestPrismSettleJobParser_ParseSubmitted(t *testing.T) {
 	deliverableHash := common.HexToHash("0xdeliv")
 	proofHash := common.HexToHash("0xpro0f")
 
-	// Layout: deliverableHash(32) | proofHash(32) = 64 bytes
 	data := make([]byte, 64)
 	copy(data[0:32], deliverableHash.Bytes())
 	copy(data[32:64], proofHash.Bytes())
@@ -208,7 +209,6 @@ func TestPrismSettleJobParser_ParseSubmitted(t *testing.T) {
 	if ce.To != common.BytesToHash(jobID.Bytes()).Hex() {
 		t.Errorf("To (jobId) = %q, want %q", ce.To, common.BytesToHash(jobID.Bytes()).Hex())
 	}
-	// FR-JI04: deliverableHash in TokenAddr, proofHash in From
 	if ce.TokenAddr != deliverableHash.Hex() {
 		t.Errorf("TokenAddr (deliverableHash) = %q, want %q", ce.TokenAddr, deliverableHash.Hex())
 	}
@@ -224,7 +224,6 @@ func TestPrismSettleJobParser_ParseCompleted(t *testing.T) {
 	provider := common.HexToAddress("0xPR0V")
 	amount := big.NewInt(2_000)
 
-	// Solidity ABI right-aligns addresses in 32-byte slots.
 	data := make([]byte, 64)
 	copy(data[12:32], provider.Bytes())
 	amount.FillBytes(data[32:64])
@@ -265,7 +264,6 @@ func TestPrismSettleJobParser_ParseRefunded(t *testing.T) {
 	buyer := common.HexToAddress("0xBA5E")
 	amount := big.NewInt(1_500)
 
-	// Solidity ABI right-aligns addresses in 32-byte slots.
 	data := make([]byte, 64)
 	copy(data[12:32], buyer.Bytes())
 	amount.FillBytes(data[32:64])
@@ -299,6 +297,89 @@ func TestPrismSettleJobParser_ParseRefunded(t *testing.T) {
 	}
 }
 
+func TestPrismSettleJobParser_ParseDisputeResolvedAnnounced(t *testing.T) {
+	p := &PrismSettleJobParser{}
+
+	jobID := big.NewInt(105)
+	ruling := uint8(1)
+	resolvedAt := uint64(1_800_000_000)
+	releaseAt := uint64(1_800_060_000)
+
+	data := make([]byte, 96)
+	data[31] = ruling
+	new(big.Int).SetUint64(resolvedAt).FillBytes(data[32:64])
+	new(big.Int).SetUint64(releaseAt).FillBytes(data[64:96])
+
+	log := types.Log{
+		Address: common.HexToAddress("0xJobContract"),
+		Topics: []common.Hash{
+			EventDisputeResolvedAnnouncedSig,
+			common.BytesToHash(jobID.Bytes()),
+		},
+		Data: data,
+	}
+
+	out, err := p.Parse(log)
+	if err != nil {
+		t.Fatalf("Parse() error: %v", err)
+	}
+	ce := out.(*model.ChainEvent)
+
+	if ce.EventType != model.TypePrismDisputeResolvedAnnounced {
+		t.Errorf("EventType = %q, want %q", ce.EventType, model.TypePrismDisputeResolvedAnnounced)
+	}
+	if ce.To != common.BytesToHash(jobID.Bytes()).Hex() {
+		t.Errorf("To (jobId) = %q, want %q", ce.To, common.BytesToHash(jobID.Bytes()).Hex())
+	}
+	if ce.Value != "1" {
+		t.Errorf("Value (ruling) = %q, want %q", ce.Value, "1")
+	}
+	if ce.Symbol != new(big.Int).SetUint64(resolvedAt).String() {
+		t.Errorf("Symbol (resolvedAt) = %q, want %q", ce.Symbol, new(big.Int).SetUint64(resolvedAt).String())
+	}
+}
+
+func TestPrismSettleJobParser_ParseArbitrationExecuted(t *testing.T) {
+	p := &PrismSettleJobParser{}
+
+	jobID := big.NewInt(106)
+	ruling := uint8(1)
+	amount := new(big.Int)
+	amount.SetString("95000000000000000000", 10) // 95 USDC (after fee)
+
+	data := make([]byte, 64)
+	data[31] = ruling
+	amount.FillBytes(data[32:64])
+
+	log := types.Log{
+		Address: common.HexToAddress("0xJobContract"),
+		Topics: []common.Hash{
+			EventArbitrationExecutedSig,
+			common.BytesToHash(jobID.Bytes()),
+		},
+		Data: data,
+	}
+
+	out, err := p.Parse(log)
+	if err != nil {
+		t.Fatalf("Parse() error: %v", err)
+	}
+	ce := out.(*model.ChainEvent)
+
+	if ce.EventType != model.TypePrismArbitrationExecuted {
+		t.Errorf("EventType = %q, want %q", ce.EventType, model.TypePrismArbitrationExecuted)
+	}
+	if ce.To != common.BytesToHash(jobID.Bytes()).Hex() {
+		t.Errorf("To (jobId) = %q, want %q", ce.To, common.BytesToHash(jobID.Bytes()).Hex())
+	}
+	if ce.Value != "1" {
+		t.Errorf("Value (ruling) = %q, want %q", ce.Value, "1")
+	}
+	if ce.Symbol != amount.String() {
+		t.Errorf("Symbol (amount) = %q, want %q", ce.Symbol, amount.String())
+	}
+}
+
 func TestPrismSettleJobParser_RejectsMalformed(t *testing.T) {
 	p := &PrismSettleJobParser{}
 
@@ -309,7 +390,7 @@ func TestPrismSettleJobParser_RejectsMalformed(t *testing.T) {
 		{"no topics", types.Log{}},
 		{"JobCreated missing topic", types.Log{
 			Topics: []common.Hash{EventJobCreatedSig},
-			Data:   make([]byte, 96),
+			Data:   make([]byte, 128),
 		}},
 		{"JobCreated data too short", types.Log{
 			Topics: []common.Hash{
@@ -358,6 +439,9 @@ func TestPrismSettleHookParser_Match(t *testing.T) {
 	}{
 		{"Disputed", EventDisputedSig, true},
 		{"DisputeResolved", EventDisputeResolvedSig, true},
+		{"ArbitratorRegistered", EventArbitratorRegisteredSig, true},
+		{"ArbitratorUnregistered", EventArbitratorUnregisteredSig, true},
+		{"ArbitratorSelected", EventArbitratorSelectedSig, true},
 		{"unknown", common.HexToHash("0xdead"), false},
 	}
 	for _, c := range cases {
@@ -376,15 +460,15 @@ func TestPrismSettleHookParser_ParseDisputed(t *testing.T) {
 	jobID := big.NewInt(200)
 	reasonHash := common.HexToHash("0xreas0n")
 
-	// Disputed: reasonHash is indexed (in topics, not data)
+	// Disputed: reasonHash is NOT indexed — it sits in Data.
+	// Topics: [sig, jobId], Data: reasonHash (32 bytes).
 	log := types.Log{
 		Address: common.HexToAddress("0xHookContract"),
 		Topics: []common.Hash{
 			EventDisputedSig,
 			common.BytesToHash(jobID.Bytes()),
-			reasonHash,
 		},
-		Data: []byte{},
+		Data: reasonHash.Bytes(),
 	}
 
 	out, err := p.Parse(log)
@@ -399,7 +483,6 @@ func TestPrismSettleHookParser_ParseDisputed(t *testing.T) {
 	if ce.To != common.BytesToHash(jobID.Bytes()).Hex() {
 		t.Errorf("To (jobId) = %q, want %q", ce.To, common.BytesToHash(jobID.Bytes()).Hex())
 	}
-	// FR-JI06: reasonHash stored in TokenAddr
 	if ce.TokenAddr != reasonHash.Hex() {
 		t.Errorf("TokenAddr (reasonHash) = %q, want %q", ce.TokenAddr, reasonHash.Hex())
 	}
@@ -410,8 +493,10 @@ func TestPrismSettleHookParser_ParseDisputeResolved(t *testing.T) {
 
 	jobID := big.NewInt(201)
 	ruling := uint8(2) // Provider wins
+	arbitrator := common.HexToAddress("0xARB1")
 
 	// DisputeResolved: ruling is uint8 in data (last byte of 32-byte slot)
+	// Topics: [sig, jobId, arbitrator]
 	data := make([]byte, 32)
 	data[31] = ruling
 
@@ -420,6 +505,7 @@ func TestPrismSettleHookParser_ParseDisputeResolved(t *testing.T) {
 		Topics: []common.Hash{
 			EventDisputeResolvedSig,
 			common.BytesToHash(jobID.Bytes()),
+			common.BytesToHash(arbitrator.Bytes()),
 		},
 		Data: data,
 	}
@@ -436,8 +522,123 @@ func TestPrismSettleHookParser_ParseDisputeResolved(t *testing.T) {
 	if ce.To != common.BytesToHash(jobID.Bytes()).Hex() {
 		t.Errorf("To (jobId) = %q, want %q", ce.To, common.BytesToHash(jobID.Bytes()).Hex())
 	}
+	if ce.From != arbitrator.Hex() {
+		t.Errorf("From (arbitrator) = %q, want %q", ce.From, arbitrator.Hex())
+	}
 	if ce.Value != "2" {
 		t.Errorf("Value (ruling) = %q, want %q", ce.Value, "2")
+	}
+}
+
+func TestPrismSettleHookParser_ParseArbitratorRegistered(t *testing.T) {
+	p := &PrismSettleHookParser{}
+
+	arbitrator := common.HexToAddress("0xARB1")
+	agentID := big.NewInt(0x4444)
+	feeBps := big.NewInt(500)
+	feeRecipient := common.HexToAddress("0xFEE1")
+
+	// Data: agentId(32) | feeBps(32) | feeRecipient(32) = 96 bytes
+	data := make([]byte, 96)
+	agentID.FillBytes(data[0:32])
+	feeBps.FillBytes(data[32:64])
+	copy(data[76:96], feeRecipient.Bytes())
+
+	log := types.Log{
+		Address: common.HexToAddress("0xHookContract"),
+		Topics: []common.Hash{
+			EventArbitratorRegisteredSig,
+			common.BytesToHash(arbitrator.Bytes()),
+		},
+		Data: data,
+	}
+
+	out, err := p.Parse(log)
+	if err != nil {
+		t.Fatalf("Parse() error: %v", err)
+	}
+	ce := out.(*model.ChainEvent)
+
+	if ce.EventType != model.TypePrismArbitratorRegistered {
+		t.Errorf("EventType = %q, want %q", ce.EventType, model.TypePrismArbitratorRegistered)
+	}
+	if ce.From != arbitrator.Hex() {
+		t.Errorf("From (arbitrator) = %q, want %q", ce.From, arbitrator.Hex())
+	}
+	if ce.Value != feeBps.String() {
+		t.Errorf("Value (feeBps) = %q, want %q", ce.Value, feeBps.String())
+	}
+	if ce.Symbol != feeRecipient.Hex() {
+		t.Errorf("Symbol (feeRecipient) = %q, want %q", ce.Symbol, feeRecipient.Hex())
+	}
+}
+
+func TestPrismSettleHookParser_ParseArbitratorUnregistered(t *testing.T) {
+	p := &PrismSettleHookParser{}
+
+	arbitrator := common.HexToAddress("0xARB1")
+
+	log := types.Log{
+		Address: common.HexToAddress("0xHookContract"),
+		Topics: []common.Hash{
+			EventArbitratorUnregisteredSig,
+			common.BytesToHash(arbitrator.Bytes()),
+		},
+		Data: []byte{},
+	}
+
+	out, err := p.Parse(log)
+	if err != nil {
+		t.Fatalf("Parse() error: %v", err)
+	}
+	ce := out.(*model.ChainEvent)
+
+	if ce.EventType != model.TypePrismArbitratorUnregistered {
+		t.Errorf("EventType = %q, want %q", ce.EventType, model.TypePrismArbitratorUnregistered)
+	}
+	if ce.From != arbitrator.Hex() {
+		t.Errorf("From (arbitrator) = %q, want %q", ce.From, arbitrator.Hex())
+	}
+}
+
+func TestPrismSettleHookParser_ParseArbitratorSelected(t *testing.T) {
+	p := &PrismSettleHookParser{}
+
+	jobID := big.NewInt(300)
+	arbitrator := common.HexToAddress("0xARB1")
+	score := big.NewInt(0.7e18)
+
+	// Data: score(32)
+	data := make([]byte, 32)
+	score.FillBytes(data)
+
+	log := types.Log{
+		Address: common.HexToAddress("0xHookContract"),
+		Topics: []common.Hash{
+			EventArbitratorSelectedSig,
+			common.BytesToHash(jobID.Bytes()),
+			common.BytesToHash(arbitrator.Bytes()),
+		},
+		Data: data,
+	}
+
+	out, err := p.Parse(log)
+	if err != nil {
+		t.Fatalf("Parse() error: %v", err)
+	}
+	ce := out.(*model.ChainEvent)
+
+	if ce.EventType != model.TypePrismArbitratorSelected {
+		t.Errorf("EventType = %q, want %q", ce.EventType, model.TypePrismArbitratorSelected)
+	}
+	if ce.To != common.BytesToHash(jobID.Bytes()).Hex() {
+		t.Errorf("To (jobId) = %q, want %q", ce.To, common.BytesToHash(jobID.Bytes()).Hex())
+	}
+	if ce.From != arbitrator.Hex() {
+		t.Errorf("From (arbitrator) = %q, want %q", ce.From, arbitrator.Hex())
+	}
+	if ce.Value != score.String() {
+		t.Errorf("Value (score) = %q, want %q", ce.Value, score.String())
 	}
 }
 
@@ -455,6 +656,7 @@ func TestPrismSettleHookParser_RejectsMalformed(t *testing.T) {
 		{"DisputeResolved data too short", types.Log{
 			Topics: []common.Hash{
 				EventDisputeResolvedSig,
+				common.Hash{},
 				common.Hash{},
 			},
 			Data: make([]byte, 16), // need 32

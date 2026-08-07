@@ -7,7 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/zane/web3-offchain/internal/repository"
 	"github.com/zane/web3-offchain/model"
 	"github.com/zane/web3-offchain/pkg/logger"
@@ -16,10 +18,11 @@ import (
 
 // EventSourceConfig configures the DB-backed EventSource implementation.
 type EventSourceConfig struct {
-	ChainName    string // e.g. "monad_testnet"
-	JobContract  string // PrismSettleJob contract address (lowercase)
-	HookContract string // ArbitrationHook contract address (lowercase)
-	RegContract  string // PrismSettleRegistry contract address (lowercase)
+	ChainName    string            // e.g. "monad_testnet"
+	JobContract  string            // PrismSettleJob contract address (lowercase)
+	HookContract string            // ArbitrationHook contract address (lowercase)
+	RegContract  string            // PrismSettleRegistry contract address (lowercase)
+	EthClient    *ethclient.Client // optional: for on-chain queries (e.g. getJobState)
 }
 
 // ChainEventSource implements evaluator.EventSource by reading from the
@@ -30,7 +33,8 @@ type ChainEventSource struct {
 	cfg          EventSourceConfig
 	repo         *repository.ChainEventRepository
 	agentDB      *repository.AgentRegistryRepository
-	scoreFetcher ScoreFetcher // optional; nil = offchain-only
+	scoreFetcher ScoreFetcher  // optional; nil = offchain-only
+	jobContract  boundContract // bound to PrismSettleJob for getJobState queries
 }
 
 // ScoreFetcher reads the live aggregated score from the Registry contract.
@@ -50,59 +54,30 @@ func NewChainEventSource(
 	agentDB *repository.AgentRegistryRepository,
 	scoreFetcher ScoreFetcher,
 ) *ChainEventSource {
-	return &ChainEventSource{
+	s := &ChainEventSource{
 		cfg:          cfg,
 		repo:         repo,
 		agentDB:      agentDB,
 		scoreFetcher: scoreFetcher,
 	}
+	// Initialize the job contract binding if an ethclient is available.
+	// This is used by RecentDisputed to query getJobState for the
+	// deliverableHash (P1-3 fix).
+	if cfg.EthClient != nil && cfg.JobContract != "" {
+		addr := common.HexToAddress(cfg.JobContract)
+		bc, err := newBoundContract(addr, jobABI, cfg.EthClient)
+		if err == nil {
+			s.jobContract = bc
+		} else {
+			logger.Warn("event_source: failed to bind job contract for getJobState",
+				logger.String("address", cfg.JobContract), logger.Error(err))
+		}
+	}
+	return s
 }
 
 // Compile-time assertion: ChainEventSource implements evaluator.EventSource.
 var _ evaluator.EventSource = (*ChainEventSource)(nil)
-
-// RecentSubmitted returns Submitted jobs seen since `since`, newest first.
-//
-// Storage convention (prismsettle_job_parser.go):
-//   - To        = jobId (uint256 hex)
-//   - TokenAddr = deliverableHash
-//   - From      = proofHash
-//   - msg.sender is NOT stored by the parser; Submitter is left empty.
-//     The Evaluator's RuleCheck treats empty Submitter as "unknown, skip
-//     submitter-vs-provider check" — see rule_check.go.
-func (s *ChainEventSource) RecentSubmitted(ctx context.Context, since time.Time, limit int) ([]evaluator.SubmittedJob, error) {
-	if limit <= 0 {
-		limit = 20
-	}
-	events, _, err := s.repo.GetPrismEvents(
-		ctx, s.cfg.ChainName, s.cfg.JobContract, "", 1, limit,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("query submitted events: %w", err)
-	}
-	out := make([]evaluator.SubmittedJob, 0, len(events))
-	for _, ev := range events {
-		if ev.EventType != model.TypePrismJobSubmitted {
-			continue
-		}
-		if ev.BlockTime > 0 && time.Unix(int64(ev.BlockTime), 0).Before(since) {
-			continue
-		}
-		provider, perr := s.ProviderFor(ctx, ev.To)
-		if perr != nil {
-			logger.Warn("event_source: provider lookup failed",
-				logger.String("job_id", ev.To), logger.Error(perr))
-		}
-		out = append(out, evaluator.SubmittedJob{
-			JobID:           ev.To,
-			Provider:        provider,
-			Submitter:       "", // parser does not decode msg.sender
-			DeliverableHash: ev.TokenAddr,
-			ProofHash:       ev.From,
-		})
-	}
-	return out, nil
-}
 
 // RecentDisputed returns Disputed jobs seen since `since`, newest first.
 //
@@ -133,11 +108,16 @@ func (s *ChainEventSource) RecentDisputed(ctx context.Context, since time.Time, 
 				logger.String("job_id", ev.To), logger.Error(perr))
 		}
 		buyer := s.buyerFor(ctx, ev.To)
+
+		// Query the on-chain job state for the deliverableHash, which is
+		// not included in the Disputed event (P1-3 fix).
+		deliverableHash := s.getDeliverableHash(ctx, ev.To)
+
 		out = append(out, evaluator.DisputedJob{
 			JobID:           ev.To,
 			Provider:        provider,
 			Buyer:           buyer,
-			DeliverableHash: "", // not in Disputed event; would need Job lookup
+			DeliverableHash: deliverableHash,
 			ReasonHash:      ev.TokenAddr,
 		})
 	}
@@ -177,6 +157,34 @@ func (s *ChainEventSource) buyerFor(ctx context.Context, jobID string) string {
 		}
 	}
 	return ""
+}
+
+// getDeliverableHash queries the PrismSettleJob.getJobState(jobId) view to
+// extract the deliverableHash (5th return value, index 4). Returns empty
+// string if the job contract binding is unavailable or the call fails.
+func (s *ChainEventSource) getDeliverableHash(ctx context.Context, jobID string) string {
+	if s.jobContract.bind == nil {
+		return ""
+	}
+	id := new(big.Int)
+	if _, ok := id.SetString(jobID, 10); !ok {
+		return ""
+	}
+	var outs []interface{}
+	if err := s.jobContract.bind.Call(&bind.CallOpts{Context: ctx}, &outs, "getJobState", id); err != nil {
+		logger.Warn("event_source: getJobState call failed",
+			logger.String("job_id", jobID), logger.Error(err))
+		return ""
+	}
+	// getJobState returns 10 fields; field index 4 = deliverableHash (bytes32).
+	if len(outs) < 5 {
+		return ""
+	}
+	hash, ok := outs[4].([32]byte)
+	if !ok {
+		return ""
+	}
+	return common.BytesToHash(hash[:]).Hex()
 }
 
 // AgentIDFor returns the Registry agentId for a provider address by scanning

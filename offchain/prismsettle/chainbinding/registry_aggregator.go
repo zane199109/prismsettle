@@ -125,6 +125,23 @@ func (r *RegistryAggregatorBinding) AggregateEpoch(ctx context.Context, agentID 
 	return tx.Hash().Hex(), nil
 }
 
+// SetAggregatedScore calls Registry.setAggregatedScore(agentId, newScore)
+// with an offchain-computed score (EMA + penalty + decay).
+func (r *RegistryAggregatorBinding) SetAggregatedScore(ctx context.Context, agentID string, newScore uint64) (string, error) {
+	if r.auth == nil {
+		return "", fmt.Errorf("aggregator: transactor not configured (auth is nil)")
+	}
+	id, err := parseAgentID(agentID)
+	if err != nil {
+		return "", fmt.Errorf("aggregator: parse agent id: %w", err)
+	}
+	tx, err := r.contract.bind.Transact(r.auth, "setAggregatedScore", id, newScore)
+	if err != nil {
+		return "", fmt.Errorf("set aggregated score transact: %w", err)
+	}
+	return tx.Hash().Hex(), nil
+}
+
 // InactiveAgents returns agentIds whose lastActivity < now - inactiveAge.
 // Reads the `agents(agentId)` view to get lastActivity for each registered
 // agent.

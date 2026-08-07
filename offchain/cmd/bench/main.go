@@ -1,290 +1,454 @@
-// Package main implements the V0/V1 OCC abort-rate benchmark.
+// Benchmark 使用 N 个独立账号并发提交 submitValidation，对比
+// V0 (BaselineRegistry, 单槽) 和 V1 (PrismSettleRegistry, 256-shard) 的 OCC abort rate。
 //
-// 这是 Phase 3 任务 3.4a 的压测脚本骨架。实际压测执行延后到 Phase 9
-// （anvil + Go 环境就绪后），符合"决策2 优先级后调"原则。
+// 流程：
+//   1. 生成 N 个临时密钥对（bench worker）
+//   2. deployer 给每个 worker 转 0.01 MON + 授权 REGISTRY_EVALUATOR_ROLE
+//   3. 每个 worker 发 1 笔 submitValidation（同时发出）
+//   4. 等所有收据，统计成功/失败/中止
+//   5. V0 跑完跑 V1，报告对比
 //
-// 用法（Phase 9 就绪后）：
-//
-//	go run ./cmd/bench/ \
-//	  -rpc http://localhost:8545 \
-//	  -v0 0xV0RegistryAddress \
-//	  -v1 0xV1RegistryAddress \
-//	  -concurrency 500 \
-//	  -duration 60s
-//
-// 输出：
-//   - V0/V1 对照表（abort rate、throughput、latency p50/p95/p99）
-//   - 三项约束声明（FR-T06）
-//   - JSON 报告文件（供压测报告引用）
+// 用法：
+//   cd offchain && DEPLOYER_KEY=<hex> PRISM_EVALUATOR_KEY=<hex> go run ./cmd/bench/
 package main
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"math/big"
 	"os"
+	"sort"
+	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
-// Config 压测配置
-type Config struct {
-	RPCEndpoint  string        // anvil/Monad testnet RPC URL
-	V0Address    string        // BaselineRegistry 地址
-	V1Address    string        // PrismSettleRegistry 地址
-	Concurrency  int           // 并发数（默认 500，对齐 NFR-MN01）
-	Duration     time.Duration // 压测时长（默认 60s）
-	ValidatorKey string        // Validator 私钥（用于签名 tx）
-	AgentIDs     []uint64      // 目标 agentId 列表（默认 0x1111~0x1111+50）
-	OutputFile   string        // JSON 报告输出路径
+type Worker struct {
+	Key    *ecdsa.PrivateKey
+	Addr   common.Address
+	AgentID uint64
 }
 
-// Result 单次压测结果
 type Result struct {
-	TotalSent     uint64        // 发送总数
-	TotalSuccess  uint64        // 成功总数
-	TotalAbort    uint64        // OCC abort 总数（tx 失败 retry）
-	TotalFailed   uint64        // 其他失败总数
-	ThroughputTPS float64       // 每秒成功 tx 数
-	LatencyP50    time.Duration // 中位延迟
-	LatencyP95    time.Duration // p95 延迟
-	LatencyP99    time.Duration // p99 延迟
-	AbortRate     float64       // abort rate = TotalAbort / TotalSent
+	TotalSent    uint64  `json:"total_sent"`
+	TotalSuccess uint64  `json:"total_success"`
+	TotalAbort   uint64  `json:"total_abort"`
+	TotalFailed  uint64  `json:"total_failed"`
+	AbortRate    float64 `json:"abort_rate"`
+	Throughput   float64 `json:"throughput_tps"`
+	LatencyP50   string  `json:"latency_p50"`
+	LatencyP95   string  `json:"latency_p95"`
+	LatencyP99   string  `json:"latency_p99"`
 }
 
-// BenchmarkReport 完整压测报告（对齐 FR-T03/T04/T06）
-type BenchmarkReport struct {
+type Report struct {
 	Timestamp   string   `json:"timestamp"`
-	Constraints []string `json:"constraints"` // FR-T06 三项约束声明
-	Config      Config   `json:"config"`
-	V0Result    Result   `json:"v0_result"`
-	V1Result    Result   `json:"v1_result"`
-	Conclusion  string   `json:"conclusion"` // V1 abort rate < 5% (NFR-MN01)
+	Concurrency int      `json:"concurrency"`
+	V0          *Result  `json:"v0,omitempty"`
+	V1          *Result  `json:"v1,omitempty"`
 }
+
+var (
+	submitValidationSig = common.Hex2Bytes("f17433c0")
+	registerAgentSig    = common.Hex2Bytes("8b3a")
+	grantRoleSig        = common.Hex2Bytes("2f2ff15d")
+)
 
 func main() {
-	cfg := parseFlags()
+	rpc := flag.String("rpc", "https://testnet-rpc.monad.xyz", "RPC URL")
+	v0Addr := flag.String("v0", "0xAecf336B8C5470E0c626ed7CE3aA682A9bBaa1d8", "V0 BaselineRegistry")
+	v1Addr := flag.String("v1", "0x296d8DfDc0E306e3472a49CE5C9e0B7a68066881", "V1 PrismSettleRegistry")
+	nWorkers := flag.Int("n", 50, "number of benchmark workers (accounts)")
+	output := flag.String("output", "bench_report.json", "JSON report path")
+	flag.Parse()
 
-	// FR-T06 三项约束声明（报告内显式声明）
-	constraints := []string{
-		"1. 统一环境：同一节点/RPC、服务器硬件、数据库配置、区块参数、Gas 费率",
-		"2. 统一压测工具&用例：固定脚本、并发量级、请求模板、执行轮次、样本总量",
-		"3. 前置数据清零：每次测试前重置合约/业务状态",
+	deployerHex := os.Getenv("DEPLOYER_KEY")
+	if deployerHex == "" {
+		fmt.Fprintln(os.Stderr, "❌ DEPLOYER_KEY 未设置")
+		os.Exit(1)
+	}
+	evalHex := os.Getenv("PRISM_EVALUATOR_KEY")
+	if evalHex == "" {
+		evalHex = deployerHex
 	}
 
-	fmt.Println("=== PrismSettle V0/V1 OCC Abort Rate Benchmark ===")
-	fmt.Println("Constraints (FR-T06):")
-	for _, c := range constraints {
-		fmt.Println("  " + c)
-	}
-	fmt.Printf("\nConfig: concurrency=%d, duration=%s\n", cfg.Concurrency, cfg.Duration)
-	fmt.Printf("V0: %s\n", cfg.V0Address)
-	fmt.Printf("V1: %s\n\n", cfg.V1Address)
-
-	// 连接 RPC
-	client, err := ethclient.Dial(cfg.RPCEndpoint)
+	ctx := context.Background()
+	client, err := ethclient.Dial(*rpc)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ RPC 连接失败: %v\n", err)
-		fmt.Fprintf(os.Stderr, "   提示：Phase 9 anvil 环境就绪后再执行实际压测\n")
 		os.Exit(1)
 	}
 	defer client.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), cfg.Duration*2)
-	defer cancel()
+	v0 := common.HexToAddress(*v0Addr)
+	v1 := common.HexToAddress(*v1Addr)
+	chainID, _ := client.NetworkID(ctx)
 
-	// 压测 V0
-	fmt.Println(">>> 压测 V0 (BaselineRegistry, 单槽存储)...")
-	v0Result := runBenchmark(ctx, client, cfg, common.HexToAddress(cfg.V0Address))
-	printResult("V0", v0Result)
-
-	// 前置数据清零（约束 3）—— Phase 9 实现实际的 reset 逻辑
-	fmt.Println("\n>>> 前置数据清零（FR-T06 约束 3）...")
-	resetContracts(client, cfg)
-
-	// 压测 V1
-	fmt.Println(">>> 压测 V1 (PrismSettleRegistry, 256 分片存储)...")
-	v1Result := runBenchmark(ctx, client, cfg, common.HexToAddress(cfg.V1Address))
-	printResult("V1", v1Result)
-
-	// 生成报告
-	conclusion := "PASS"
-	if v1Result.AbortRate >= 0.05 {
-		conclusion = fmt.Sprintf("FAIL: V1 abort rate %.2f%% >= 5%% (NFR-MN01)", v1Result.AbortRate*100)
-	} else {
-		conclusion = fmt.Sprintf("PASS: V1 abort rate %.2f%% < 5%% (NFR-MN01)", v1Result.AbortRate*100)
-	}
-
-	report := BenchmarkReport{
-		Timestamp:   time.Now().Format(time.RFC3339),
-		Constraints: constraints,
-		Config:      cfg,
-		V0Result:    v0Result,
-		V1Result:    v1Result,
-		Conclusion:  conclusion,
-	}
-
-	// 输出 JSON 报告
-	if cfg.OutputFile != "" {
-		data, _ := json.MarshalIndent(report, "", "  ")
-		if err := os.WriteFile(cfg.OutputFile, data, 0644); err != nil {
-			fmt.Fprintf(os.Stderr, "⚠️ 报告写入失败: %v\n", err)
-		} else {
-			fmt.Printf("\n📄 报告已写入: %s\n", cfg.OutputFile)
+	// Step 1: 生成 N 个 worker
+	fmt.Printf(">>> 生成 %d 个 worker...\n", *nWorkers)
+	workers := make([]Worker, *nWorkers)
+	for i := range workers {
+		key, _ := crypto.GenerateKey()
+		workers[i] = Worker{
+			Key:     key,
+			Addr:    crypto.PubkeyToAddress(key.PublicKey),
+			AgentID: 0x1111 + uint64(i),
 		}
 	}
 
-	fmt.Println("\n=== Conclusion ===")
-	fmt.Println(conclusion)
-}
+	// Step 2: deployer 注册 agent + 转账 + 授权
+	fmt.Println(">>> 注册 agent + 转账 + 授权...")
+	deployerKey := hexToKey(deployerHex)
+	deployerAddr := crypto.PubkeyToAddress(deployerKey.PublicKey)
 
-// parseFlags 解析命令行参数
-func parseFlags() Config {
-	cfg := Config{}
-	flag.StringVar(&cfg.RPCEndpoint, "rpc", "http://localhost:8545", "RPC endpoint")
-	flag.StringVar(&cfg.V0Address, "v0", "", "V0 BaselineRegistry address")
-	flag.StringVar(&cfg.V1Address, "v1", "", "V1 PrismSettleRegistry address")
-	flag.IntVar(&cfg.Concurrency, "concurrency", 500, "concurrent senders (NFR-MN01)")
-	flag.DurationVar(&cfg.Duration, "duration", 60*time.Second, "benchmark duration")
-	flag.StringVar(&cfg.ValidatorKey, "validator-key", "", "validator private key (hex)")
-	flag.StringVar(&cfg.OutputFile, "output", "bench_report.json", "JSON report output path")
-	flag.Parse()
-
-	if cfg.V0Address == "" || cfg.V1Address == "" {
-		fmt.Fprintln(os.Stderr, "❌ 必须指定 -v0 和 -v1 合约地址")
-		os.Exit(1)
+	gasPrice, _ := client.SuggestGasPrice(ctx)
+	if gasPrice == nil {
+		gasPrice = big.NewInt(100_000_000_000)
 	}
 
-	// 默认 agentId 列表：0x1111 ~ 0x1111+50（覆盖多个分片）
-	for i := uint64(0); i < 50; i++ {
-		cfg.AgentIDs = append(cfg.AgentIDs, 0x1111+i)
+	// 给 agentId 范围注册
+	nonce, _ := client.PendingNonceAt(ctx, deployerAddr)
+	fee := new(big.Int).Mul(gasPrice, big.NewInt(2_000_000)) // 0.2 MON at 100 gwei
+
+	for i, w := range workers {
+		// grant role on V0 (agents already registered from previous runs)
+			sendTx(ctx, client, deployerKey, deployerAddr, nonce, v0, big.NewInt(0), 80000, gasPrice, makeGrantRoleCalldata(evalRoleHash(), w.Addr))
+			nonce++
+			// grant role on V1
+			sendTx(ctx, client, deployerKey, deployerAddr, nonce, v1, big.NewInt(0), 80000, gasPrice, makeGrantRoleCalldata(evalRoleHash(), w.Addr))
+			nonce++
+			// fund worker
+			sendTx(ctx, client, deployerKey, deployerAddr, nonce, w.Addr, fee, 21000, gasPrice, nil)
+		nonce++
+
+		if (i+1)%10 == 0 {
+			fmt.Printf("  %d/%d workers ready\n", i+1, *nWorkers)
+		}
 	}
-	return cfg
+
+	// 等待所有 setup tx 确认
+	fmt.Println(">>> 等待 setup 交易确认...")
+	for {
+		current, _ := client.PendingNonceAt(ctx, deployerAddr)
+		if current >= nonce {
+			break
+		}
+		fmt.Printf("  deployer nonce: %d/%d\n", current, nonce)
+		time.Sleep(5 * time.Second)
+	}
+	fmt.Println("  ✅ setup 完成")
+
+	// Step 3+4: 跑 V0 压测
+	fmt.Println("\n>>> 压测 V0 (单槽)...")
+	v0Result := runBenchWorkers(ctx, client, chainID, v0, workers, gasPrice, evalHex)
+
+	// 等 nonce 重置
+	time.Sleep(5 * time.Second)
+
+	// Step 5: 跑 V1 压测
+	fmt.Println("\n>>> 压测 V1 (256-shard)...")
+	v1Result := runBenchWorkers(ctx, client, chainID, v1, workers, gasPrice, evalHex)
+
+	// Step 6: 出报告
+	printResult("V0", v0Result)
+	printResult("V1", v1Result)
+
+	report := Report{
+		Timestamp:   time.Now().Format(time.RFC3339),
+		Concurrency: *nWorkers,
+		V0:          v0Result,
+		V1:          v1Result,
+	}
+	data, _ := json.MarshalIndent(report, "", "  ")
+	os.WriteFile(*output, data, 0644)
+	fmt.Printf("\n📄 %s\n", *output)
+	fmt.Println(string(data))
 }
 
-// runBenchmark 执行压测：并发发送 submitValidation tx，统计 abort rate
-func runBenchmark(ctx context.Context, client *ethclient.Client, cfg Config, registry common.Address) Result {
+// runBenchWorkers N 个 worker 并发各发 1 笔 submitValidation
+func runBenchWorkers(ctx context.Context, client *ethclient.Client, chainID *big.Int,
+	registry common.Address, workers []Worker, gasPrice *big.Int, evalKeyHex string) *Result {
+
+	start := time.Now()
 	var (
-		totalSent    uint64
-		totalSuccess uint64
-		totalAbort   uint64
-		totalFailed  uint64
-		latencies    sync.Map // goroutine-safe latency 收集
+		mu       sync.Mutex
+		success  uint64
+		abort    uint64
+		failed   uint64
+		sent     uint64
+		latencyMs []float64
 	)
 
-	// 压测截止时间
-	deadline := time.Now().Add(cfg.Duration)
 	var wg sync.WaitGroup
 
-	// 启动 N 个并发 sender
-	for i := 0; i < cfg.Concurrency; i++ {
+	// Stagger workers to avoid RPC rate limit (50 req/s)
+	sem := make(chan struct{}, 10) // max 10 concurrent RPC calls
+
+	for _, w := range workers {
 		wg.Add(1)
-		go func(senderID int) {
+		go func(w Worker) {
 			defer wg.Done()
-			for time.Now().Before(deadline) {
-				agentID := cfg.AgentIDs[senderID%len(cfg.AgentIDs)]
-				atomic.AddUint64(&totalSent, 1)
+			sem <- struct{}{}
+			defer func() { <-sem }()
+		tStart := time.Now()
 
-				start := time.Now()
-				// TODO Phase 9: 实际发送 submitValidation tx
-				// 1. 构造 calldata: submitValidation(agentId, 0.8e18, proofHash, 0, 0)
-				// 2. 签名 + eth_sendRawTransaction
-				// 3. 等待 receipt，判断 success/abort/failed
-				//    - receipt.Status == 1 → success
-				//    - receipt.Status == 0 → abort（OCC 冲突）
-				//    - err != nil → failed
-				_ = agentID
-				_ = registry
-				elapsed := time.Since(start)
-
-				// 占位：实际压测时由 receipt 决定
-				// 当前骨架仅记录 latency，不实际发包
-				latencies.Store(senderID, elapsed)
-
-				// Phase 9 实际逻辑示例（伪代码）：
-				// receipt, err := sendSubmitValidation(client, cfg.ValidatorKey, registry, agentID)
-				// if err != nil { atomic.AddUint64(&totalFailed, 1); continue }
-				// if receipt.Status == 0 { atomic.AddUint64(&totalAbort, 1); continue }
-				// atomic.AddUint64(&totalSuccess, 1)
+		// Check balance first
+			bal := retryBalance(ctx, client, w.Addr)
+			if bal == nil || bal.Cmp(big.NewInt(0)) == 0 {
+				mu.Lock()
+				fmt.Printf("  ❌ worker 0x%x no balance\n", w.AgentID)
+				failed++
+				mu.Unlock()
+				return
 			}
-		}(i)
+
+			// Check role on contract
+			roleData := makeHasRoleCalldata(evalRoleHash(), w.Addr)
+			roleResult, _ := client.CallContract(ctx, ethereum.CallMsg{
+				To:   &registry,
+				Data: roleData,
+			}, nil)
+			hasRole := len(roleResult) == 32 && roleResult[31] == 1
+			if !hasRole {
+				mu.Lock()
+				fmt.Printf("  ❌ worker 0x%x no role on %s\n", w.AgentID, registry.Hex()[2:6])
+				failed++
+				mu.Unlock()
+				return
+			}
+
+			nonce := retryNonce(ctx, client, w.Addr)
+			if nonce == nil {
+				mu.Lock()
+				failed++
+				mu.Unlock()
+				return
+			}
+
+			calldata, err := makeSubmitCalldata(w.AgentID)
+			if err != nil {
+				mu.Lock()
+				failed++
+				mu.Unlock()
+				return
+			}
+
+			tx := types.NewTransaction(*nonce, registry, big.NewInt(0), 200_000, gasPrice, calldata)
+			signer := types.NewLondonSigner(chainID)
+			signed, err := types.SignTx(tx, signer, w.Key)
+			if err != nil {
+				mu.Lock()
+				failed++
+				mu.Unlock()
+				return
+			}
+
+			err = retrySend(ctx, client, signed)
+			if err != nil {
+				mu.Lock()
+				failed++
+				mu.Unlock()
+				return
+			}
+			mu.Lock()
+			sent++
+			mu.Unlock()
+
+			// 等收据
+			var receipt *types.Receipt
+			for i := 0; i < 60; i++ {
+				receipt, _ = client.TransactionReceipt(ctx, signed.Hash())
+				if receipt != nil {
+					break
+				}
+				time.Sleep(500 * time.Millisecond)
+			}
+
+			elapsed := time.Since(tStart)
+			mu.Lock()
+			latencyMs = append(latencyMs, float64(elapsed.Milliseconds()))
+
+			if receipt == nil {
+				failed++
+			} else if receipt.Status == 1 {
+				success++
+			} else {
+				abort++
+			}
+			mu.Unlock()
+		}(w)
 	}
 	wg.Wait()
 
-	// 计算吞吐与延迟分位数
-	latencyList := collectLatencies(&latencies)
-	result := Result{
-		TotalSent:    atomic.LoadUint64(&totalSent),
-		TotalSuccess: atomic.LoadUint64(&totalSuccess),
-		TotalAbort:   atomic.LoadUint64(&totalAbort),
-		TotalFailed:  atomic.LoadUint64(&totalFailed),
-		LatencyP50:   percentile(latencyList, 50),
-		LatencyP95:   percentile(latencyList, 95),
-		LatencyP99:   percentile(latencyList, 99),
+	duration := time.Since(start).Seconds()
+	sort.Float64s(latencyMs)
+
+	r := &Result{
+		TotalSent:   sent,
+		TotalSuccess: success,
+		TotalAbort:  abort,
+		TotalFailed: failed,
+		Throughput:  float64(success) / duration,
 	}
-	if cfg.Duration > 0 {
-		result.ThroughputTPS = float64(result.TotalSuccess) / cfg.Duration.Seconds()
+	if sent > 0 {
+		r.AbortRate = float64(abort) / float64(sent)
 	}
-	if result.TotalSent > 0 {
-		result.AbortRate = float64(result.TotalAbort) / float64(result.TotalSent)
+	if len(latencyMs) > 0 {
+		r.LatencyP50 = fmt.Sprintf("%.0fms", pctl(latencyMs, 50))
+		r.LatencyP95 = fmt.Sprintf("%.0fms", pctl(latencyMs, 95))
+		r.LatencyP99 = fmt.Sprintf("%.0fms", pctl(latencyMs, 99))
 	}
-	return result
+	return r
 }
 
-// resetContracts 前置数据清零（FR-T06 约束 3）
-// Phase 9 实现：重新部署 V0/V1 合约，或调用 reset 函数
-func resetContracts(client *ethclient.Client, cfg Config) {
-	// TODO Phase 9:
-	// 1. 重新部署 V0 + V1 合约（状态清零）
-	// 2. 或调用 admin reset 函数（如果有）
-	// 3. Validator 重新质押
-	fmt.Println("   [TODO Phase 9] 实际重置合约状态")
-	_ = new(big.Int) // 占位引用 big 包
+// sendTx 签名并发送交易，不等待收据
+func sendTx(ctx context.Context, client *ethclient.Client, key *ecdsa.PrivateKey, from common.Address,
+	nonce uint64, to common.Address, value *big.Int, gas uint64, gasPrice *big.Int, data []byte) {
+
+	signer := types.NewLondonSigner(client_chainID(ctx, client))
+	tx := types.NewTransaction(nonce, to, value, gas, gasPrice, data)
+	signed, _ := types.SignTx(tx, signer, key)
+	client.SendTransaction(ctx, signed)
 }
 
-// collectLatencies 从 sync.Map 收集延迟数据
-func collectLatencies(m *sync.Map) []time.Duration {
-	var list []time.Duration
-	m.Range(func(_, v interface{}) bool {
-		list = append(list, v.(time.Duration))
-		return true
-	})
-	return list
+func makeRegisterCalldata(agentID uint64) []byte {
+	meta := `{"endpointUrl":"http://bench","capabilities":"bench"}`
+	d := make([]byte, 4)
+	copy(d, registerAgentSig)
+	// agentId (uint256)
+	d = append(d, common.LeftPadBytes(big.NewInt(int64(agentID)).Bytes(), 32)...)
+	// string offset = 0x40
+	d = append(d, common.LeftPadBytes(big.NewInt(64).Bytes(), 32)...)
+	// string length
+	d = append(d, common.LeftPadBytes(big.NewInt(int64(len(meta))).Bytes(), 32)...)
+	// string data
+	d = append(d, []byte(meta)...)
+	d = append(d, make([]byte, 32-len(meta)%32)...)
+	return d
 }
 
-// percentile 计算分位数
-func percentile(list []time.Duration, p int) time.Duration {
-	if len(list) == 0 {
+func makeGrantRoleCalldata(role common.Hash, addr common.Address) []byte {
+	d := make([]byte, 4)
+	copy(d, grantRoleSig)
+	d = append(d, role.Bytes()...)
+	d = append(d, common.LeftPadBytes(addr.Bytes(), 32)...)
+	return d
+}
+
+func makeHasRoleCalldata(role common.Hash, addr common.Address) []byte {
+	d := common.Hex2Bytes("91d14854")
+	d = append(d, role.Bytes()...)
+	d = append(d, common.LeftPadBytes(addr.Bytes(), 32)...)
+	return d
+}
+
+func makeSubmitCalldata(agentID uint64) ([]byte, error) {
+	d := make([]byte, 4)
+	copy(d, submitValidationSig)
+
+	// agentId (uint256)
+	d = append(d, common.LeftPadBytes(big.NewInt(int64(agentID)).Bytes(), 32)...)
+
+	// score = 0.8e18 (uint96)
+	score := new(big.Int).Mul(big.NewInt(8), new(big.Int).Exp(big.NewInt(10), big.NewInt(17), nil))
+	scoreBytes := make([]byte, 32)
+	score.FillBytes(scoreBytes)
+	d = append(d, scoreBytes...)
+
+	// proofHash (bytes32)
+	proofHash := crypto.Keccak256Hash([]byte("benchmark"))
+	d = append(d, proofHash.Bytes()...)
+
+	// jobId (uint256) = 0
+	d = append(d, make([]byte, 32)...)
+
+	// source (uint8) = 1
+	d = append(d, common.LeftPadBytes([]byte{1}, 32)...)
+
+	return d, nil
+}
+
+func evalRoleHash() common.Hash {
+	return crypto.Keccak256Hash([]byte("REGISTRY_EVALUATOR_ROLE"))
+}
+
+func hexToKey(hex string) *ecdsa.PrivateKey {
+	hex = strings.TrimPrefix(hex, "0x")
+	key, err := crypto.HexToECDSA(hex)
+	if err != nil {
+		panic("invalid private key: " + err.Error())
+	}
+	return key
+}
+
+func client_chainID(ctx context.Context, client *ethclient.Client) *big.Int {
+	id, _ := client.NetworkID(ctx)
+	return id
+}
+
+func printResult(label string, r *Result) {
+	fmt.Printf("\n--- %s ---\n", label)
+	fmt.Printf("  Sent:     %d\n", r.TotalSent)
+	fmt.Printf("  Success:  %d\n", r.TotalSuccess)
+	fmt.Printf("  Abort:    %d\n", r.TotalAbort)
+	fmt.Printf("  Failed:   %d\n", r.TotalFailed)
+	fmt.Printf("  Abort%%:   %.2f%%\n", r.AbortRate*100)
+	fmt.Printf("  TPS:      %.2f\n", r.Throughput)
+	fmt.Printf("  P50/P95/P99: %s / %s / %s\n", r.LatencyP50, r.LatencyP95, r.LatencyP99)
+}
+
+func pctl(sorted []float64, p int) float64 {
+	if len(sorted) == 0 {
 		return 0
 	}
-	// 简化实现：实际应排序后取分位
-	// Phase 9 可用 sort + 索引计算
-	if p >= 100 {
-		return list[len(list)-1]
+	idx := len(sorted) * p / 100
+	if idx >= len(sorted) {
+		idx = len(sorted) - 1
 	}
-	idx := len(list) * p / 100
-	if idx >= len(list) {
-		idx = len(list) - 1
-	}
-	return list[idx]
+	return sorted[idx]
 }
 
-// printResult 打印压测结果
-func printResult(label string, r Result) {
-	fmt.Printf("\n--- %s Result ---\n", label)
-	fmt.Printf("Total Sent:    %d\n", r.TotalSent)
-	fmt.Printf("Total Success: %d\n", r.TotalSuccess)
-	fmt.Printf("Total Abort:   %d (OCC conflict)\n", r.TotalAbort)
-	fmt.Printf("Total Failed:  %d\n", r.TotalFailed)
-	fmt.Printf("Throughput:    %.2f TPS\n", r.ThroughputTPS)
-	fmt.Printf("Abort Rate:    %.2f%%\n", r.AbortRate*100)
-	fmt.Printf("Latency P50:   %v\n", r.LatencyP50)
-	fmt.Printf("Latency P95:   %v\n", r.LatencyP95)
-	fmt.Printf("Latency P99:   %v\n", r.LatencyP99)
+// retryBalance 带重试的余额查询（应对 RPC 429）
+func retryBalance(ctx context.Context, client *ethclient.Client, addr common.Address) *big.Int {
+	for i := 0; i < 5; i++ {
+		bal, err := client.BalanceAt(ctx, addr, nil)
+		if err == nil {
+			return bal
+		}
+		time.Sleep(time.Duration(200*(i+1)) * time.Millisecond)
+	}
+	return nil
+}
+
+// retryNonce 带重试的 nonce 查询
+func retryNonce(ctx context.Context, client *ethclient.Client, addr common.Address) *uint64 {
+	for i := 0; i < 5; i++ {
+		n, err := client.PendingNonceAt(ctx, addr)
+		if err == nil {
+			return &n
+		}
+		time.Sleep(time.Duration(200*(i+1)) * time.Millisecond)
+	}
+	return nil
+}
+
+// retrySend 带重试的交易发送
+func retrySend(ctx context.Context, client *ethclient.Client, tx *types.Transaction) error {
+	for i := 0; i < 5; i++ {
+		err := client.SendTransaction(ctx, tx)
+		if err == nil {
+			return nil
+		}
+		time.Sleep(time.Duration(200*(i+1)) * time.Millisecond)
+	}
+	return fmt.Errorf("send failed after 5 retries")
 }

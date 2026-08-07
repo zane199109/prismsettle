@@ -42,8 +42,11 @@ var (
 
 // AllowedRoles lists the roles the Evaluator is expected to hold. Checked at
 // startup; missing any → warn (continue, since the operator may grant later).
+//
+// Note: COMMERCE_EVALUATOR_ROLE is intentionally excluded — the Evaluator
+// no longer calls complete() (Buyer does). The Evaluator only handles
+// arbitration (RESOLVER_ROLE on Hook, REGISTRY_EVALUATOR_ROLE on Registry).
 var AllowedRoles = []string{
-	roleCommerceEvaluator.Hex(),
 	roleResolver.Hex(),
 	roleRegistryEvaluator.Hex(),
 }
@@ -59,14 +62,13 @@ var DisallowedRoles = []string{
 // Source enum mirrors the contract's submitValidation source parameter.
 const (
 	SourceValidator     uint8 = 0
-	SourceEvaluatorMain uint8 = 1 // Job completion path
+	SourceEvaluatorMain uint8 = 1 // Job completion path (deprecated, kept for DB compat)
 	SourceEvaluatorArb  uint8 = 2 // Arbitration path
 )
 
 // Decision values stored in decision_logs.decision.
 const (
 	DecisionComplete        = "complete"
-	DecisionReject          = "reject"
 	DecisionFallback        = "fallback" // LLM unavailable, score=0.6e18
 	DecisionDisputeResolved = "dispute_resolved"
 )

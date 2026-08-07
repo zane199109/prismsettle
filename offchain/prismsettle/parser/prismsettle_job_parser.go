@@ -36,9 +36,9 @@ func (p *PrismSettleJobParser) Name() string { return "PrismSettleJob" }
 // Event signature hashes (keccak256 of the canonical signature).
 // MUST match the Solidity event declarations in PrismSettleJob.sol exactly.
 var (
-	// event JobCreated(uint256 indexed agentId, uint256 indexed jobId, address buyer, uint64 deadline, address hook);
+	// event JobCreated(uint256 indexed agentId, uint256 indexed jobId, address buyer, uint64 deadline, address hook, uint96 minProviderReputation);
 	EventJobCreatedSig = crypto.Keccak256Hash([]byte(
-		"JobCreated(uint256,uint256,address,uint64,address)",
+		"JobCreated(uint256,uint256,address,uint64,address,uint96)",
 	))
 
 	// event Funded(uint256 indexed jobId, address buyer, uint256 amount);
@@ -50,11 +50,22 @@ var (
 	// event Submitted(uint256 indexed jobId, bytes32 deliverableHash, bytes32 proofHash);
 	EventSubmittedSig = crypto.Keccak256Hash([]byte("Submitted(uint256,bytes32,bytes32)"))
 
+	// event Rejected(uint256 indexed jobId, address buyer, bytes32 reasonHash);
+	EventRejectedSig = crypto.Keccak256Hash([]byte("Rejected(uint256,address,bytes32)"))
+
 	// event Completed(uint256 indexed jobId, address provider, uint256 amount);
 	EventCompletedSig = crypto.Keccak256Hash([]byte("Completed(uint256,address,uint256)"))
 
 	// event Refunded(uint256 indexed jobId, address buyer, uint256 amount);
 	EventRefundedSig = crypto.Keccak256Hash([]byte("Refunded(uint256,address,uint256)"))
+
+	// event DisputeResolvedAnnounced(uint256 indexed jobId, uint8 ruling, uint256 resolvedAt, uint256 releaseAt);
+	EventDisputeResolvedAnnouncedSig = crypto.Keccak256Hash([]byte(
+		"DisputeResolvedAnnounced(uint256,uint8,uint256,uint256)",
+	))
+
+	// event ArbitrationExecuted(uint256 indexed jobId, uint8 ruling, uint256 amount);
+	EventArbitrationExecutedSig = crypto.Keccak256Hash([]byte("ArbitrationExecuted(uint256,uint8,uint256)"))
 )
 
 func (p *PrismSettleJobParser) Match(log types.Log) bool {
@@ -66,8 +77,11 @@ func (p *PrismSettleJobParser) Match(log types.Log) bool {
 		sig == EventFundedSig.Hex() ||
 		sig == EventAssignedSig.Hex() ||
 		sig == EventSubmittedSig.Hex() ||
+		sig == EventRejectedSig.Hex() ||
 		sig == EventCompletedSig.Hex() ||
-		sig == EventRefundedSig.Hex()
+		sig == EventRefundedSig.Hex() ||
+		sig == EventDisputeResolvedAnnouncedSig.Hex() ||
+		sig == EventArbitrationExecutedSig.Hex()
 }
 
 func (p *PrismSettleJobParser) Parse(log types.Log) (any, error) {
@@ -86,13 +100,13 @@ func (p *PrismSettleJobParser) Parse(log types.Log) (any, error) {
 	switch log.Topics[0].Hex() {
 	case EventJobCreatedSig.Hex():
 		// Topics: [sig, agentId, jobId]
-		// Data:   buyer (address, 32 bytes) | deadline (uint64, 32 bytes) | hook (address, 32 bytes)
-		// Total data length: 3 * 32 = 96 bytes
+		// Data:   buyer (address, 32 bytes) | deadline (uint64, 32 bytes) | hook (address, 32 bytes) | minProviderReputation (uint96, 32 bytes)
+		// Total data length: 4 * 32 = 128 bytes
 		if len(log.Topics) < 3 {
 			return nil, fmt.Errorf("prismsettle_job JobCreated: want 3 topics, got %d", len(log.Topics))
 		}
-		if len(log.Data) < 96 {
-			return nil, fmt.Errorf("prismsettle_job JobCreated: data too short (min 96 bytes, got %d)", len(log.Data))
+		if len(log.Data) < 128 {
+			return nil, fmt.Errorf("prismsettle_job JobCreated: data too short (min 128 bytes, got %d)", len(log.Data))
 		}
 		event.EventType = model.TypePrismJobCreated
 		// From = agentId (the agent this job is created for)
@@ -151,6 +165,22 @@ func (p *PrismSettleJobParser) Parse(log types.Log) (any, error) {
 		event.From = common.BytesToHash(log.Data[32:64]).Hex()
 		event.Value = "0"
 
+	case EventRejectedSig.Hex():
+		// Topics: [sig, jobId]
+		// Data:   buyer (address, 32 bytes) | reasonHash (bytes32, 32 bytes)
+		if len(log.Topics) < 2 {
+			return nil, fmt.Errorf("prismsettle_job Rejected: want 2 topics, got %d", len(log.Topics))
+		}
+		if len(log.Data) < 64 {
+			return nil, fmt.Errorf("prismsettle_job Rejected: data too short (min 64 bytes)")
+		}
+		event.EventType = model.TypePrismJobRejected
+		event.To = agentIDFromTopic(log.Topics[1])
+		event.From = common.BytesToAddress(log.Data[:32]).Hex()
+		// reasonHash stored in TokenAddr (rework request).
+		event.TokenAddr = common.BytesToHash(log.Data[32:64]).Hex()
+		event.Value = "0"
+
 	case EventCompletedSig.Hex():
 		// Topics: [sig, jobId]
 		// Data:   provider (address, 32 bytes) | amount (uint256, 32 bytes)
@@ -178,6 +208,42 @@ func (p *PrismSettleJobParser) Parse(log types.Log) (any, error) {
 		event.To = agentIDFromTopic(log.Topics[1])
 		event.From = common.BytesToAddress(log.Data[:32]).Hex()
 		event.Value = new(big.Int).SetBytes(log.Data[32:64]).String()
+
+	case EventDisputeResolvedAnnouncedSig.Hex():
+		// Topics: [sig, jobId]
+		// Data:   ruling (uint8, 32 bytes) | resolvedAt (uint256, 32 bytes) | releaseAt (uint256, 32 bytes)
+		// Total data length: 3 * 32 = 96 bytes
+		if len(log.Topics) < 2 {
+			return nil, fmt.Errorf("prismsettle_job DisputeResolvedAnnounced: want 2 topics, got %d", len(log.Topics))
+		}
+		if len(log.Data) < 96 {
+			return nil, fmt.Errorf("prismsettle_job DisputeResolvedAnnounced: data too short (min 96 bytes, got %d)", len(log.Data))
+		}
+		event.EventType = model.TypePrismDisputeResolvedAnnounced
+		event.To = agentIDFromTopic(log.Topics[1])
+		// ruling is uint8, last byte of the 32-byte slot
+		event.Value = fmt.Sprintf("%d", log.Data[31])
+		// resolvedAt stored in Symbol
+		event.Symbol = new(big.Int).SetBytes(log.Data[32:64]).String()
+		// releaseAt stored in TokenAddr
+		event.TokenAddr = common.BytesToHash(log.Data[64:96]).Hex()
+
+	case EventArbitrationExecutedSig.Hex():
+		// Topics: [sig, jobId]
+		// Data:   ruling (uint8, 32 bytes) | amount (uint256, 32 bytes)
+		// Total data length: 2 * 32 = 64 bytes
+		if len(log.Topics) < 2 {
+			return nil, fmt.Errorf("prismsettle_job ArbitrationExecuted: want 2 topics, got %d", len(log.Topics))
+		}
+		if len(log.Data) < 64 {
+			return nil, fmt.Errorf("prismsettle_job ArbitrationExecuted: data too short (min 64 bytes, got %d)", len(log.Data))
+		}
+		event.EventType = model.TypePrismArbitrationExecuted
+		event.To = agentIDFromTopic(log.Topics[1])
+		// ruling is uint8, last byte of the 32-byte slot
+		event.Value = fmt.Sprintf("%d", log.Data[31])
+		// amount
+		event.Symbol = new(big.Int).SetBytes(log.Data[32:64]).String()
 
 	default:
 		return nil, fmt.Errorf("prismsettle_job: unknown event sig %s", log.Topics[0].Hex())

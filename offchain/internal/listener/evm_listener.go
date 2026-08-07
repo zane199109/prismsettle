@@ -38,6 +38,7 @@ type EVMListener struct {
 	eventIngestService *service.EventIngestService
 	lockService        *service.LockService
 	contractABI        abi.ABI
+	contractParser     parser.EventParser
 
 	cancelFunc context.CancelFunc
 	stopOnce   sync.Once
@@ -140,6 +141,12 @@ func NewEVMListener(
 		return nil, fmt.Errorf("parse abi failed: %v", err)
 	}
 
+	// Get the parser for this single contract
+	contractParser := parser.GetParser(chainConfig.ContractParser)
+	if contractParser == nil {
+		return nil, fmt.Errorf("parser not found for contract %s: %s", chainConfig.ContractAddr, chainConfig.ContractParser)
+	}
+
 	return &EVMListener{
 		chainConfig:        chainConfig,
 		rpcClient:          rpcClient,
@@ -147,6 +154,7 @@ func NewEVMListener(
 		eventIngestService: eventIngestService,
 		lockService:        lockService,
 		contractABI:        contractABI,
+		contractParser:     contractParser,
 		completedTasks:     make(map[uint64]finishedTask),
 		blockCache:         blockCache,
 	}, nil
@@ -157,10 +165,10 @@ func (l *EVMListener) Start(ctx context.Context) error {
 	defer utils.LogPanic()
 	defer l.rpcClient.Close()
 
-	// Load last synchronized block from storage
+	// Load last block for this single contract
 	lastBlock, lastBlockHash, err := l.syncStateService.GetLastBlock(ctx, l.chainConfig.ChainName, l.chainConfig.ContractAddr)
 	if err != nil {
-		logger.Errorf("get last block failed", logger.Error(err))
+		logger.Errorf("get last block failed for contract %s", logger.String("contract", l.chainConfig.ContractAddr), logger.Error(err))
 		return err
 	}
 	if lastBlock == 0 {
@@ -527,19 +535,14 @@ func (l *EVMListener) syncBlockRange(ctx context.Context, startBlock uint64, end
 		return nil, nil
 	}
 
-	// Get event parser
-	p := parser.GetParser(l.chainConfig.ContractParser)
-	if p == nil {
-		return nil, fmt.Errorf("parser not found: %s", l.chainConfig.ContractParser)
-	}
-
 	var chainEvents []*model.ChainEvent
 	for _, logEntry := range logs {
-		if !p.Match(logEntry) {
+		// Use the single contract parser for this listener
+		if !l.contractParser.Match(logEntry) {
 			continue
 		}
 
-		data, err := p.Parse(logEntry)
+		data, err := l.contractParser.Parse(logEntry)
 		if err != nil || data == nil {
 			// Don't fail the whole batch for one malformed log, but make the
 			// dropped event traceable so operators can investigate data gaps.
@@ -721,7 +724,7 @@ func (l *EVMListener) BatchSaveChainEvents(ctx context.Context, chainEvents []*m
 	start := time.Now()
 	defer utils.LogPanic()
 
-	key := fmt.Sprintf("%s:%s:%s", constant.KeyBatchSaveLock, l.chainConfig.ChainName, l.chainConfig.ContractAddr)
+	key := fmt.Sprintf("%s:%s:%s", constant.KeyBatchSaveLock, l.chainConfig.ChainName, "multi")
 	expire := time.Duration(l.chainConfig.LockExpirationSeconds) * time.Second
 
 	const maxLockRetries = 3
@@ -833,11 +836,11 @@ func (l *EVMListener) detectAndHandleReorg(ctx context.Context, dbLastBlock uint
 		logger.Uint64("from", startRollbackBlock),
 		logger.Uint64("to", dbLastBlock))
 
-	// Roll back invalid data
-	rolledBackRows, err := l.eventIngestService.RollbackEvents(ctx, l.chainConfig.ChainName, l.chainConfig.ContractAddr, startRollbackBlock, dbLastBlock)
+	// Roll back invalid data for this single contract
+	rows, err := l.eventIngestService.RollbackEvents(ctx, l.chainConfig.ChainName, l.chainConfig.ContractAddr, startRollbackBlock, dbLastBlock)
 	if err != nil {
-		logger.Errorf("rollback failed", logger.Error(err))
-		return 0, fmt.Errorf("rollback failed: %w", err)
+		logger.Errorf("rollback failed for contract %s", logger.String("contract", l.chainConfig.ContractAddr), logger.Error(err))
+		return 0, fmt.Errorf("rollback failed for contract %s: %w", l.chainConfig.ContractAddr, err)
 	}
 
 	// Phase 9: persist the reorg for the /perf/reorg-feed endpoint (best-effort).
@@ -854,7 +857,7 @@ func (l *EVMListener) detectAndHandleReorg(ctx context.Context, dbLastBlock uint
 			dbLastBlockHash,
 			chainHash,
 			rollbackDepth,
-			rolledBackRows,
+			rows,
 		); err != nil {
 			logger.Errorf("persist reorg_event failed (non-fatal)", logger.Error(err))
 		}

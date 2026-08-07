@@ -59,3 +59,27 @@ eval:
     must yield identical scores. Respond ONLY in JSON:
     {"score": <integer 0..1000000000000000000>, "reason": "<=200 chars"}.
   registry_address: "0xRegistryAddress"  # set to deployed Registry addr
+
+# Smart-contract auditor worker agents (Phase 8 demo).
+# These agents compete by reputation to grab audit jobs and submit mock
+# deliverables. They are standalone Go binaries running cmd/worker.
+auditor-senior:
+  port: 9105
+  endpoint: "http://localhost:9105"
+  agent_id: "0x3333"
+  system_prompt: ""
+  registry_address: ""
+
+auditor-junior:
+  port: 9106
+  endpoint: "http://localhost:9106"
+  agent_id: "0x7777"
+  system_prompt: ""
+  registry_address: ""
+
+auditor-rookie:
+  port: 9107
+  endpoint: "http://localhost:9107"
+  agent_id: "0x8888"
+  system_prompt: ""
+  registry_address: ""
