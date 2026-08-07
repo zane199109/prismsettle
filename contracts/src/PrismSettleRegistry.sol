@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.24;
+pragma solidity ^0.8.24;
 
 import {AccessControl} from "@openzeppelin/contracts/access/AccessControl.sol";
 
@@ -32,6 +32,11 @@ contract PrismSettleRegistry is AccessControl {
     /// @dev Minimum stake a validator must lock before submitting validations.
     uint256 public constant MIN_STAKE = 5 ether;
 
+    /// @dev Maximum stake per validator (anti-centralization). Prevents a
+    ///      single validator from accumulating disproportionate influence over
+    ///      reputation scores via stake-weighted aggregation.
+    uint256 public constant MAX_STAKE = 200 ether;
+
     /// @dev Minimum interval between two aggregateEpoch calls for the same
     ///      agent. Staggers aggregation across agents so the slow path does
     ///      not become a write-contention hotspot.
@@ -45,6 +50,12 @@ contract PrismSettleRegistry is AccessControl {
 
     /// @dev Per-agent per-epoch Validator validation cap (anti-sybil).
     uint256 public constant MAX_VALIDATIONS_PER_EPOCH = 50;
+
+    /// @dev Per-agent per-epoch Evaluator validation cap (anti-sybil).
+    ///      Evaluator score submissions are also bounded to prevent reputation
+    ///      manipulation. Source=2 (arbitration) is exempt because it is a
+    ///      penalty path, not a score-boosting path.
+    uint256 public constant MAX_EVALUATOR_RECORDS_PER_EPOCH = 20;
 
     /// @dev Inactivity decay window: scores start decaying after this many
     ///      days of inactivity.
@@ -73,15 +84,15 @@ contract PrismSettleRegistry is AccessControl {
         uint96 score; // 0..1e18 fixed-point (1e18 = 1.0)
         bytes32 proofHash; // deliverable proof_hash
         uint64 timestamp;
-        uint8 source; // 0=Validator / 1=Evaluator-Job / 2=Evaluator-Arbitration
-        uint256 jobId; // 0 when source=0; Job id when source in {1,2}
+        uint8 source; // 0=Validator / 1=Evaluator-Job / 2=Evaluator-Arbitration / 3=Buyer
+        uint256 jobId; // 0 when source=0; Job id when source in {1,2,3}
     }
 
     struct AgentMetadata {
         bool registered;
         address owner;
-        string endpointUrl; // Agent invocation endpoint
-        string capabilities; // JSON string, capability tags
+        string metadata; // JSON: {"endpointUrl":"...","capabilities":"...","name":"...","description":"..."}
+        string capabilities; // JSON string, capability tags (deprecated, use metadata field)
         uint64 lastAggregate;
         uint96 seedScore; // Seed Phase preset initial score 0.7e18
         uint64 registeredAt;
@@ -101,6 +112,9 @@ contract PrismSettleRegistry is AccessControl {
 
     // High-frequency write path: sharded by low 8 bits of agentId.
     mapping(uint8 => mapping(uint256 => ValidationRecord[])) public shardValidations;
+
+    // Trusted Job contracts allowed to call submitValidation with source=3 (Buyer).
+    mapping(address => bool) public trustedJobs;
 
     // Low-frequency write path: only touched by aggregateEpoch.
     mapping(uint256 => uint256) public aggregatedScore;
@@ -155,7 +169,7 @@ contract PrismSettleRegistry is AccessControl {
         agents[agentId] = AgentMetadata({
             registered: true,
             owner: msg.sender,
-            endpointUrl: metadata,
+            metadata: metadata,
             capabilities: "",
             lastAggregate: 0,
             seedScore: 0,
@@ -178,6 +192,14 @@ contract PrismSettleRegistry is AccessControl {
         aggregatedScore[agentId] = seedScore;
     }
 
+    /// @notice Mark or unmark a contract as a trusted Job contract. Trusted
+    ///         Job contracts may call submitValidation with source=3 (Buyer).
+    /// @param job      The Job contract address.
+    /// @param trusted  Whether the contract is trusted.
+    function setTrustedJob(address job, bool trusted) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        trustedJobs[job] = trusted;
+    }
+
     // ---------------------------------------------------------------------
     // Validator staking
     // ---------------------------------------------------------------------
@@ -185,7 +207,9 @@ contract PrismSettleRegistry is AccessControl {
     /// @notice Lock stake. Must reach MIN_STAKE before submitting validations.
     function stake() external payable {
         require(msg.value > 0, "PrismSettle: zero stake");
-        validatorStake[msg.sender].amount += msg.value;
+        uint256 newTotal = validatorStake[msg.sender].amount + msg.value;
+        require(newTotal <= MAX_STAKE, "PrismSettle: max stake exceeded");
+        validatorStake[msg.sender].amount = newTotal;
         emit Staked(msg.sender, msg.value);
     }
 
@@ -232,8 +256,8 @@ contract PrismSettleRegistry is AccessControl {
     /// @param agentId   Target agent.
     /// @param score     0..1e18 fixed-point.
     /// @param proofHash Hash of off-chain proof (e.g. signature bundle).
-    /// @param jobId     0 for Validator channel; Job id for Evaluator channel.
-    /// @param source    0=Validator / 1=Evaluator-Job / 2=Evaluator-Arbitration.
+    /// @param jobId     0 for Validator channel; Job id for Evaluator/Buyer channels.
+    /// @param source    0=Validator / 1=Evaluator-Job / 2=Evaluator-Arbitration / 3=Buyer.
     function submitValidation(uint256 agentId, uint96 score, bytes32 proofHash, uint256 jobId, uint8 source) external {
         AgentMetadata storage info = agents[agentId];
         require(info.registered, "PrismSettle: agent not registered");
@@ -246,6 +270,9 @@ contract PrismSettleRegistry is AccessControl {
         } else if (source == 1 || source == 2) {
             // Evaluator channel
             require(hasRole(REGISTRY_EVALUATOR_ROLE, msg.sender), "PrismSettle: not evaluator");
+        } else if (source == 3) {
+            // Buyer channel — called from trusted Job contract
+            require(trustedJobs[msg.sender], "PrismSettle: not trusted job");
         } else {
             revert("PrismSettle: invalid source");
         }
@@ -253,9 +280,27 @@ contract PrismSettleRegistry is AccessControl {
         uint8 shard = shardOf(agentId);
         ValidationRecord[] storage records = shardValidations[shard][agentId];
 
-        // Anti-sybil: Validator channel has per-epoch cap. Evaluator exempt.
+        // Anti-sybil: per-epoch caps by source type.
+        // - source=0 (Validator): MAX_VALIDATIONS_PER_EPOCH, stake-gated.
+        // - source=1 (Evaluator main): MAX_EVALUATOR_RECORDS_PER_EPOCH.
+        // - source=2 (Arbitration penalty): exempt (penalty path, not score-boosting).
+        // - source=3 (Buyer): exempt (one-time rating per job, not score-boosting).
         if (source == 0) {
-            require(records.length < MAX_VALIDATIONS_PER_EPOCH, "PrismSettle: epoch quota exceeded");
+            uint256 count;
+            for (uint256 i = 0; i < records.length; i++) {
+                if (records[i].source == 0) {
+                    unchecked { ++count; }
+                }
+            }
+            require(count < MAX_VALIDATIONS_PER_EPOCH, "PrismSettle: validator epoch quota exceeded");
+        } else if (source == 1) {
+            uint256 count;
+            for (uint256 i = 0; i < records.length; i++) {
+                if (records[i].source == 1) {
+                    unchecked { ++count; }
+                }
+            }
+            require(count < MAX_EVALUATOR_RECORDS_PER_EPOCH, "PrismSettle: evaluator epoch quota exceeded");
         }
 
         records.push(
@@ -273,6 +318,44 @@ contract PrismSettleRegistry is AccessControl {
         info.lastActivity = uint64(block.timestamp);
 
         emit ValidationSubmitted(agentId, shard, msg.sender, score, proofHash, uint64(block.timestamp), source, jobId);
+    }
+
+    // ---------------------------------------------------------------------
+    // Offchain-computed score setter
+    // ---------------------------------------------------------------------
+
+    /// @dev EMA smoothing factor: 0.3 (fixed-point 1e18).
+    uint256 public constant ALPHA = 0.3e18;
+
+    /// @dev Dual-factor completion bonus: +0.005e18 per completed job
+    ///      (source=3 Buyer rating record) per epoch.
+    uint256 public constant COMPLETION_BONUS = 0.005e18;
+
+    /// @dev Dual-factor completion bonus cap per epoch (≈10 jobs/epoch).
+    uint256 public constant COMPLETION_BONUS_EPOCH_CAP = 0.05e18;
+
+    /// @dev Dual-factor rating adjustment coefficient: (score − 0.5e18) × 0.05.
+    uint256 public constant RATING_ADJUST_COEF = 0.05e18;
+
+    /// @dev Dual-factor rating adjustment cap per epoch (±0.02e18).
+    uint256 public constant RATING_ADJUST_EPOCH_CAP = 0.02e18;
+
+    /// @notice Set the aggregated score for an agent. Called by the offchain
+    ///         Keeper after computing the weighted average, EMA smoothing,
+    ///         arbitration penalty, and inactivity decay off-chain.
+    ///         Replaces the on-chain aggregateEpoch for the primary path.
+    /// @param agentId   The target agent.
+    /// @param newScore  The computed score (0..1e18).
+    function setAggregatedScore(uint256 agentId, uint256 newScore) external onlyRole(REGISTRY_EVALUATOR_ROLE) {
+        AgentMetadata storage info = agents[agentId];
+        require(info.registered, "PrismSettle: agent not registered");
+        require(newScore <= 1e18, "PrismSettle: score > 1e18");
+
+        uint256 oldScore = aggregatedScore[agentId];
+        aggregatedScore[agentId] = newScore;
+        info.lastAggregate = uint64(block.timestamp);
+
+        emit Aggregated(agentId, oldScore, newScore, 0, info.taskCount, 0);
     }
 
     // ---------------------------------------------------------------------
@@ -303,15 +386,27 @@ contract PrismSettleRegistry is AccessControl {
             return;
         }
 
-        // 1. Stake-weighted average: Validator weighted by stake; Evaluator weight = 1
+        // 1. Stake-weighted average: Validator weighted by stake; Evaluator weight = 1.
+        //    source=3 (Buyer rating) records are EXCLUDED from the weighted
+        //    average — they feed the dual-factor channel in step 2b.
         // Gas protection + FIFO: process at most MAX_RECORDS oldest records per call,
         // newer ones deferred to next epoch. O(1) head removal: tail overwrites head
         // then pop (order shuffled but weighted average unaffected).
         uint256 processCount = records.length > MAX_RECORDS ? MAX_RECORDS : records.length;
         uint256 weightedSum = 0;
         uint256 totalWeight = 0;
+        uint256 buyerCount = 0;
+        uint256 buyerSum = 0;
         for (uint256 i = 0; i < processCount; i++) {
             ValidationRecord storage r = records[0];
+            if (r.source == 3) {
+                // Buyer satisfaction record: dual-factor channel.
+                buyerCount++;
+                buyerSum += uint256(r.score);
+                records[0] = records[records.length - 1];
+                records.pop();
+                continue;
+            }
             uint256 w = (r.source == 0) ? validatorStake[r.validator].amount : 1;
             if (w == 0) w = 1; // fallback: slashed Validator's historical records still participate
             weightedSum += uint256(r.score) * w;
@@ -321,17 +416,35 @@ contract PrismSettleRegistry is AccessControl {
         }
         uint256 weighted = totalWeight == 0 ? info.seedScore : weightedSum / totalWeight;
 
-        // 2. EMA smoothing: newScore = oldScore + alpha * (weighted - oldScore)
-        //    alpha = 1e18 / (1e18 + taskCount); larger taskCount => smaller change,
-        //    avoids extreme single-rating swings.
-        //    Precision: fold 1e18 into the multiplication to avoid integer
-        //    division truncation (alpha as a standalone would be 1, not 1e18).
-        uint256 taskCountScaled = 1e18 + uint256(info.taskCount);
-        uint256 newScore;
-        if (weighted >= oldScore) {
-            newScore = oldScore + (weighted - oldScore) * 1e18 / taskCountScaled;
-        } else {
-            newScore = oldScore - (oldScore - weighted) * 1e18 / taskCountScaled;
+        // 2. EMA smoothing (source=0/1/2 only): newScore = oldScore + ALPHA * (weighted - oldScore)
+        //    ALPHA = 0.3 (fixed). Fixed alpha ensures agents can always
+        //    recover from a bad rating, unlike taskCount-based alpha which
+        //    asymptotically approaches zero change.
+        uint256 newScore = oldScore;
+        if (totalWeight > 0) {
+            if (weighted >= oldScore) {
+                newScore = oldScore + (weighted - oldScore) * ALPHA / 1e18;
+            } else {
+                newScore = oldScore - (oldScore - weighted) * ALPHA / 1e18;
+            }
+        }
+
+        // 2b. Dual-factor channel (source=3 Buyer ratings):
+        //     completion bonus (+0.005e18/record, epoch-capped) plus a rating
+        //     nudge ((avg − 0.5e18) × 0.05, epoch-capped ±0.02e18).
+        if (buyerCount > 0) {
+            uint256 bonus = COMPLETION_BONUS * buyerCount;
+            if (bonus > COMPLETION_BONUS_EPOCH_CAP) bonus = COMPLETION_BONUS_EPOCH_CAP;
+            uint256 avg = buyerSum / buyerCount;
+            if (avg >= 0.5e18) {
+                uint256 up = (avg - 0.5e18) * RATING_ADJUST_COEF / 1e18;
+                if (up > RATING_ADJUST_EPOCH_CAP) up = RATING_ADJUST_EPOCH_CAP;
+                newScore += bonus + up;
+            } else {
+                uint256 down = (0.5e18 - avg) * RATING_ADJUST_COEF / 1e18;
+                if (down > RATING_ADJUST_EPOCH_CAP) down = RATING_ADJUST_EPOCH_CAP;
+                newScore = newScore + bonus > down ? newScore + bonus - down : 0;
+            }
         }
 
         // 3. Inactivity decay: after INACTIVE_DAYS of inactivity, deduct DECAY_PER_DAY per day.

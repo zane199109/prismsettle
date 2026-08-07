@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.24;
+pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol";
@@ -317,7 +317,7 @@ contract PrismSettleRegistryTest is Test {
 
         vm.prank(validator);
         vm.expectRevert("PrismSettle: invalid source");
-        reg.submitValidation(AGENT_A, 0.5e18, keccak256("proof"), 0, 3);
+        reg.submitValidation(AGENT_A, 0.5e18, keccak256("proof"), 0, 4);
     }
 
     function testSubmitValidationEnforcesEpochQuota() public {
@@ -332,7 +332,7 @@ contract PrismSettleRegistryTest is Test {
 
         // 51st should revert.
         vm.prank(validator);
-        vm.expectRevert("PrismSettle: epoch quota exceeded");
+        vm.expectRevert("PrismSettle: validator epoch quota exceeded");
         reg.submitValidation(AGENT_A, 0.5e18, keccak256("overflow"), 0, 0);
     }
 
@@ -340,13 +340,18 @@ contract PrismSettleRegistryTest is Test {
         vm.prank(agentOwner);
         reg.registerAgent(AGENT_A, METADATA_A);
 
-        // Evaluator can exceed MAX_VALIDATIONS_PER_EPOCH.
-        for (uint256 i = 0; i < reg.MAX_VALIDATIONS_PER_EPOCH() + 1; i++) {
+        // Evaluator records are capped by MAX_EVALUATOR_RECORDS_PER_EPOCH (20),
+        // independent of the Validator quota. 21st reverts.
+        for (uint256 i = 0; i < reg.MAX_EVALUATOR_RECORDS_PER_EPOCH(); i++) {
             vm.prank(evaluator);
             reg.submitValidation(AGENT_A, 0.5e18, keccak256(abi.encode(i)), i, 1);
         }
 
-        assertEq(reg.getValidationCount(AGENT_A), reg.MAX_VALIDATIONS_PER_EPOCH() + 1);
+        assertEq(reg.getValidationCount(AGENT_A), reg.MAX_EVALUATOR_RECORDS_PER_EPOCH());
+
+        vm.prank(evaluator);
+        vm.expectRevert("PrismSettle: evaluator epoch quota exceeded");
+        reg.submitValidation(AGENT_A, 0.5e18, keccak256("overflow"), 21, 1);
     }
 
     function testMultipleValidatorsAppendIndependently() public {
@@ -370,7 +375,7 @@ contract PrismSettleRegistryTest is Test {
         reg.registerAgent(AGENT_A, METADATA_A);
 
         // validator (100 stake) gives 0.4, otherValidator (100 stake) gives 0.6
-        // First aggregate: oldScore=0, taskCount=0, alpha=1 => newScore = weighted = 0.5e18
+        // Fixed ALPHA=0.3: newScore = 0 + 0.3 * (0.5e18 - 0) = 0.15e18
         vm.prank(validator);
         reg.submitValidation(AGENT_A, 0.4e18, bytes32(uint256(1)), 0, 0);
         vm.prank(otherValidator);
@@ -378,7 +383,7 @@ contract PrismSettleRegistryTest is Test {
 
         reg.aggregateEpoch(AGENT_A);
 
-        assertEq(reg.getScore(AGENT_A), 0.5e18);
+        assertEq(reg.getScore(AGENT_A), 0.15e18);
     }
 
     function testAggregateEmitsAggregatedEvent() public {
@@ -389,7 +394,7 @@ contract PrismSettleRegistryTest is Test {
 
         // Aggregated(agentId, oldScore, newScore, count, taskCount, decay)
         vm.expectEmit(true, false, false, true);
-        emit PrismSettleRegistry.Aggregated(AGENT_A, 0, 0.7e18, 1, 1, 0);
+        emit PrismSettleRegistry.Aggregated(AGENT_A, 0, 0.21e18, 1, 1, 0);
         reg.aggregateEpoch(AGENT_A);
     }
 
@@ -423,26 +428,20 @@ contract PrismSettleRegistryTest is Test {
         vm.prank(agentOwner);
         reg.registerAgent(AGENT_A, METADATA_A);
 
-        // First epoch: 0.5
+        // First epoch: 0.5 → 0 + 0.3 × 0.5 = 0.15e18 (fixed ALPHA)
         vm.prank(validator);
         reg.submitValidation(AGENT_A, 0.5e18, bytes32(uint256(1)), 0, 0);
         reg.aggregateEpoch(AGENT_A);
-        assertEq(reg.getScore(AGENT_A), 0.5e18);
+        assertEq(reg.getScore(AGENT_A), 0.15e18);
 
-        // Second epoch: 1.0
-        // alpha = 1e18 / (1e18 + taskCount=2) ≈ 1 (very close to 1)
-        // newScore = 0.5e18 + alpha * (1.0e18 - 0.5e18) / 1e18
-        // Since alpha is essentially 1, newScore ≈ 1.0e18 (off by < 1 wei).
+        // Second epoch: 1.0 → 0.15 + 0.3 × (1.0 - 0.15) = 0.405e18
         vm.warp(block.timestamp + 2 minutes);
         vm.prank(otherValidator);
         reg.submitValidation(AGENT_A, 1.0e18, bytes32(uint256(2)), 0, 0);
         reg.aggregateEpoch(AGENT_A);
 
         uint256 score = reg.getScore(AGENT_A);
-        // EMA with taskCount=2 makes alpha ~0.999999999999999998, so score
-        // is 1.0e18 minus a negligible (< 1 wei) rounding error. Allow
-        // 1 wei tolerance to avoid integer-division flakiness.
-        assertApproxEqAbs(score, 1.0e18, 1);
+        assertApproxEqAbs(score, 0.405e18, 1);
     }
 
     function testAggregateClearsProcessedRecords() public {
@@ -461,12 +460,12 @@ contract PrismSettleRegistryTest is Test {
         vm.prank(agentOwner);
         reg.registerAgent(AGENT_A, METADATA_A);
 
-        // Submit MAX_RECORDS + 10 records via Evaluator channel (source=1)
-        // to bypass the MAX_VALIDATIONS_PER_EPOCH=50 quota, so we can
-        // verify aggregateEpoch's MAX_RECORDS truncation.
+        // Submit MAX_RECORDS + 10 records via the arbitration channel
+        // (source=2, exempt from per-epoch quotas) so aggregateEpoch's
+        // MAX_RECORDS truncation can be verified.
         for (uint256 i = 0; i < reg.MAX_RECORDS() + 10; i++) {
             vm.prank(evaluator);
-            reg.submitValidation(AGENT_A, 0.5e18, keccak256(abi.encode(i)), uint64(i), 1);
+            reg.submitValidation(AGENT_A, 0.5e18, keccak256(abi.encode(i)), uint64(i), 2);
         }
 
         reg.aggregateEpoch(AGENT_A);
@@ -586,7 +585,8 @@ contract PrismSettleRegistryTest is Test {
         uint256 w1 = 10 ether;
         uint256 expected = (uint256(0.4e18) * w0 + uint256(0.6e18) * w1) / (w0 + w1);
         reg.aggregateEpoch(AGENT_A);
-        assertEq(reg.getScore(AGENT_A), expected);
+        // Fixed ALPHA=0.3: newScore = 0 + 0.3 × weighted.
+        assertEq(reg.getScore(AGENT_A), expected * reg.ALPHA() / 1e18);
     }
 
     // ------------------------------------------------------------------
@@ -620,4 +620,55 @@ contract PrismSettleRegistryTest is Test {
         assertEq(uint256(reg.shardOf(AGENT_A)), 0x11);
         assertEq(uint256(reg.shardOf(AGENT_B)), 0x22);
     }
+
+    // ------------------------------------------------------------------
+    // Dual-factor aggregation — Buyer ratings (source=3)
+    // ------------------------------------------------------------------
+
+    function _buyerRatingSetup() internal {
+        vm.prank(agentOwner);
+        reg.registerAgent(AGENT_A, METADATA_A);
+        reg.seedAgent(AGENT_A, 0.7e18);
+        reg.setTrustedJob(address(this), true);
+        vm.warp(block.timestamp + reg.EPOCH() + 1);
+    }
+
+    /// @notice Single 0.9 rating: completion bonus (+0.005) + rating nudge
+    ///         ((0.9-0.5)*0.05 = +0.02) → 0.7 + 0.005 + 0.02 = 0.725.
+    function testBuyerRatingDualFactorAdjustment() public {
+        _buyerRatingSetup();
+        reg.submitValidation(AGENT_A, 0.9e18, keccak256("p"), 1, 3);
+        reg.aggregateEpoch(AGENT_A);
+        assertEq(reg.getScore(AGENT_A), 0.725e18, "bonus + positive nudge");
+    }
+
+    /// @notice Low rating 0.1: bonus +0.005, nudge (0.1-0.5)*0.05 = -0.02
+    ///         → 0.7 + 0.005 - 0.02 = 0.685.
+    function testBuyerRatingDownwardAdjustment() public {
+        _buyerRatingSetup();
+        reg.submitValidation(AGENT_A, 0.1e18, keccak256("p"), 1, 3);
+        reg.aggregateEpoch(AGENT_A);
+        assertEq(reg.getScore(AGENT_A), 0.685e18, "bonus + negative nudge");
+    }
+
+    /// @notice 11 completions in one epoch: bonus capped at 0.05 and nudge
+    ///         capped at 0.02 → 0.7 + 0.05 + 0.02 = 0.77 (anti-sybil).
+    function testCompletionBonusEpochCap() public {
+        _buyerRatingSetup();
+        for (uint256 i = 0; i < 11; i++) {
+            reg.submitValidation(AGENT_A, 0.9e18, keccak256(abi.encode(i)), i + 1, 3);
+        }
+        reg.aggregateEpoch(AGENT_A);
+        assertEq(reg.getScore(AGENT_A), 0.77e18, "capped bonus + capped nudge");
+    }
+
+    /// @notice source=3 only (no weighted records) → no EMA pull: a neutral
+    ///         0.5 rating leaves only the completion bonus → 0.705.
+    function testBuyerRatingNoEmaWithoutWeightedRecords() public {
+        _buyerRatingSetup();
+        reg.submitValidation(AGENT_A, 0.5e18, keccak256("p"), 1, 3);
+        reg.aggregateEpoch(AGENT_A);
+        assertEq(reg.getScore(AGENT_A), 0.705e18, "neutral rating keeps bonus only");
+    }
+
 }

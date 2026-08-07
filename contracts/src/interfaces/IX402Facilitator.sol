@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.24;
+pragma solidity ^0.8.24;
 
 /// @title IX402Facilitator
 /// @notice Minimal interface for the x402 payment facilitator.
