@@ -175,19 +175,6 @@
   },
   {
     "type": "function",
-    "name": "NEUTRAL_SCORE",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "RATING_ADJUST_COEF",
     "inputs": [],
     "outputs": [

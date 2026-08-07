@@ -25,15 +25,18 @@ import {
   HOOK_CONTRACT_ADDRESS,
   ERC20_ABI,
   PAYMENT_TOKEN_ADDRESS,
+  WMON_ADDRESS,
+  WMON_ABI,
+  paymentTokenFor,
   contractsReady,
 } from "@/lib/contracts";
 
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL;
 
 // JobCreated event signature for log parsing. Must match the full on-chain
-// event including the minProviderReputation field.
+// event including the minProviderReputation and paymentToken fields.
 const JOB_CREATED_EVENT = parseAbiItem(
-  "event JobCreated(uint256 indexed agentId, uint256 indexed jobId, address buyer, uint64 deadline, address hook, uint96 minProviderReputation)"
+  "event JobCreated(uint256 indexed agentId, uint256 indexed jobId, address buyer, uint64 deadline, address hook, uint96 minProviderReputation, address paymentToken)"
 );
 
 function NewJobBody() {
@@ -48,6 +51,8 @@ function NewJobBody() {
   const [deadline, setDeadline] = useState("");
   const [amount, setAmount] = useState("");
   const [minProviderReputation, setMinProviderReputation] = useState("");
+  const [currency, setCurrency] = useState<"usdc" | "mon">("usdc");
+  const [wrapAmount, setWrapAmount] = useState("");
   const [decision, setDecision] = useState<TrustCheckResult["decision"] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [stepLabel, setStepLabel] = useState<string | null>(null);
@@ -57,13 +62,28 @@ function NewJobBody() {
     hash: txHash ?? undefined,
   });
 
+  // The job's payment token for the selected currency:
+  // createJob arg — 0 = contract default (USDC), or WMON for MON mode.
+  const paymentTokenArg = paymentTokenFor(currency);
+  // The real ERC-20 contract to approve/query for the selected currency.
+  const erc20Address = currency === "mon" ? WMON_ADDRESS : PAYMENT_TOKEN_ADDRESS;
+
   // Read current ERC-20 allowance to decide if approve is needed.
   const { data: allowance } = useReadContract({
-    address: PAYMENT_TOKEN_ADDRESS,
+    address: erc20Address,
     abi: ERC20_ABI,
     functionName: "allowance",
     args: [address ?? "0x0", JOB_CONTRACT_ADDRESS ?? "0x0"],
-    query: { enabled: Boolean(address && PAYMENT_TOKEN_ADDRESS && JOB_CONTRACT_ADDRESS) },
+    query: { enabled: Boolean(address && erc20Address && JOB_CONTRACT_ADDRESS) },
+  });
+
+  // WMON balance (MON mode) to decide whether wrapping is needed.
+  const { data: wmonBalance } = useReadContract({
+    address: WMON_ADDRESS,
+    abi: ERC20_ABI,
+    functionName: "balanceOf",
+    args: [address ?? "0x0"],
+    query: { enabled: Boolean(address) },
   });
 
   const ready = contractsReady() && JOB_CONTRACT_ADDRESS !== undefined;
@@ -72,10 +92,37 @@ function NewJobBody() {
   const amountBig = amount ? BigInt(amount) : 0n;
   const allowanceBig = (allowance as bigint | undefined) ?? 0n;
   const needsApprove = allowanceBig < amountBig;
+  // MON mode: wrapping only needed when the wallet's WMON balance is short.
+  const wmonBalanceBig = (wmonBalance as bigint | undefined) ?? 0n;
+  const needsWrap = currency === "mon" && wmonBalanceBig < amountBig;
+  const wrapAmountBig = wrapAmount ? BigInt(wrapAmount) : 0n;
+
+  async function handleWrap(e: React.FormEvent) {
+    e.preventDefault();
+    if (!address || wrongChain || wrapAmountBig <= 0n) return;
+    setError(null);
+    setTxHash(null);
+    try {
+      setStepLabel("Wrapping MON → WMON…");
+      const wrapHash = await writeContractAsync({
+        address: WMON_ADDRESS,
+        abi: WMON_ABI,
+        functionName: "deposit",
+        value: wrapAmountBig,
+        chainId: monadTestnet.id,
+      });
+      setTxHash(wrapHash);
+      await waitForReceipt(wrapHash);
+      setStepLabel(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setStepLabel(null);
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (blocked || !address || !JOB_CONTRACT_ADDRESS || !PAYMENT_TOKEN_ADDRESS) return;
+    if (blocked || !address || !JOB_CONTRACT_ADDRESS || (currency === "usdc" && !PAYMENT_TOKEN_ADDRESS)) return;
     setError(null);
     setTxHash(null);
 
@@ -99,13 +146,13 @@ function NewJobBody() {
     const minRepBig = minProviderReputation ? BigInt(minProviderReputation) : 0n;
 
     try {
-      // Step 1: createJob
+      // Step 1: createJob — per-job payment token (0 = default USDC, or WMON)
       setStepLabel("Step 1/3: Creating job on-chain…");
       const createHash = await writeContractAsync({
         address: JOB_CONTRACT_ADDRESS,
         abi: JOB_ABI,
         functionName: "createJob",
-        args: [agentIdBig, 0n, deadlineBig, HOOK_CONTRACT_ADDRESS ?? "0x0000000000000000000000000000000000000000", minRepBig],
+        args: [agentIdBig, 0n, deadlineBig, HOOK_CONTRACT_ADDRESS ?? "0x0000000000000000000000000000000000000000", minRepBig, paymentTokenArg],
         chainId: monadTestnet.id,
       });
       setTxHash(createHash);
@@ -137,7 +184,7 @@ function NewJobBody() {
         setStepLabel("Step 2/3: Approving ERC-20 transfer…");
         setTxHash(null);
         const approveHash = await writeContractAsync({
-          address: PAYMENT_TOKEN_ADDRESS,
+          address: erc20Address!,
           abi: ERC20_ABI,
           functionName: "approve",
           args: [JOB_CONTRACT_ADDRESS, amountBig],
@@ -208,6 +255,68 @@ function NewJobBody() {
               </div>
             )}
           </div>
+
+          {/* Currency selector (per-job payment token) */}
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-white/80">Currency</label>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setCurrency("usdc")}
+                className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                  currency === "usdc"
+                    ? "border-prism-accent bg-prism-accent/10 text-prism-accent"
+                    : "border-white/10 bg-prism-surface/60 text-white/60 hover:border-white/20"
+                }`}
+              >
+                USDC
+                <span className="block text-[10px] font-normal text-white/40">default token</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrency("mon")}
+                className={`rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                  currency === "mon"
+                    ? "border-prism-accent bg-prism-accent/10 text-prism-accent"
+                    : "border-white/10 bg-prism-surface/60 text-white/60 hover:border-white/20"
+                }`}
+              >
+                MON (WMON)
+                <span className="block text-[10px] font-normal text-white/40">wrapped MON escrow</span>
+              </button>
+            </div>
+            {currency === "mon" && (
+              <p className="mt-1 text-[11px] text-white/40">
+                Escrow is held in WMON ({WMON_ADDRESS}). Wrap MON below if your WMON balance is short.
+              </p>
+            )}
+          </div>
+
+          {/* Wrap MON → WMON (MON mode, when WMON balance is short) */}
+          {currency === "mon" && needsWrap && (
+            <form onSubmit={handleWrap} className="rounded-lg border border-white/10 bg-prism-surface/40 p-3">
+              <label className="mb-1.5 block text-sm font-medium text-white/80">
+                Wrap MON → WMON <span className="text-white/40">(balance {(wmonBalanceBig / 10n ** 18n).toString()} WMON)</span>
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  required
+                  value={wrapAmount}
+                  onChange={(e) => setWrapAmount(e.target.value)}
+                  placeholder="amount in wei (e.g. 100000000000000000000 = 100 MON)"
+                  className="flex-1 rounded-lg border border-white/10 bg-prism-surface/60 px-3 py-2 font-mono text-sm text-white placeholder:text-white/30 focus:border-prism-accent focus:outline-none"
+                />
+                <button
+                  type="submit"
+                  disabled={isWriting || wrapAmountBig <= 0n}
+                  className="rounded-lg bg-prism-accent px-4 py-2 text-sm font-medium text-black disabled:opacity-50"
+                >
+                  Wrap
+                </button>
+              </div>
+            </form>
+          )}
 
           {/* Funding path detection */}
           <div>
