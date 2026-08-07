@@ -671,7 +671,7 @@ stateDiagram-v2
 #### 3.3.3 接口签名
 
 ```solidity
-function createJob(bytes32 agentId, uint256 parentJobId, uint64 deadline, address hook)
+function createJob(uint256 agentId, uint256 parentJobId, uint64 deadline, address hook, uint96 minProviderReputation, address paymentToken)
     external returns (uint256 jobId);
 function fundViaToken(uint256 jobId, uint256 amount, bytes calldata x402Receipt) external;
 function assign(uint256 jobId, address provider) external;
@@ -708,7 +708,7 @@ graph LR
 #### 3.3.5 关键函数伪代码
 
 ```solidity
-function createJob(bytes32 agentId, uint256 parentJobId, uint64 deadline, address hook)
+function createJob(uint256 agentId, uint256 parentJobId, uint64 deadline, address hook, uint96 minProviderReputation, address paymentToken)
     external returns (uint256 jobId) {
     require(deadline > block.timestamp, "deadline passed");
     // Account-level nonce generates jobId: write lock downgraded from "global hotspot" to "account-level", eliminates createJob OCC conflicts
@@ -2363,8 +2363,8 @@ cast send $REGISTRY "stake()" --value 100ether \
   --rpc-url $RPC --private-key $VALIDATOR_KEY
 
 # 4. Create demo Job
-cast send $JOB "createJob(bytes32,uint256,uint64,address)" \
-  $(cast keccak "defi-agent") 0 1700000600 $HOOK \
+cast send $JOB "createJob(uint256,uint256,uint64,address,uint96,address)" \
+  0x1111 0 1700000600 $HOOK 0 0x0000000000000000000000000000000000000000 \
   --rpc-url $RPC --private-key $BUYER_KEY
 ```
 
@@ -2518,7 +2518,7 @@ sequenceDiagram
     FE->>Biz: 通过 Proxy 预览交付（可选）
 
     Note over Buyer,Job: 创建并注资
-    Buyer->>Job: createJob(agentId, parentJobId, deadline, hook)
+    Buyer->>Job: createJob(agentId, parentJobId, deadline, hook, minRep, paymentToken)
     Job-->>Buyer: jobId
     Buyer->>Fac: 获取 x402 receipt
     Fac-->>Buyer: receipt

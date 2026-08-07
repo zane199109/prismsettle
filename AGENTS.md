@@ -69,6 +69,11 @@
 - `createJob` includes `minProviderReputation` param — provider must have
   score ≥ this threshold to `grabJob`. Frontend and contract both enforce
   this check.
+- Multi-currency escrow: `createJob`'s 6th arg `paymentToken` selects the
+  job's token (address(0) = contract-default USDC; any ERC-20 such as WMON
+  works). All settlement (`complete`/`claimRefund`/`executeArbitrationResult`)
+  and Hook deposits resolve the job's token via `getJobPaymentToken`. The
+  x402 receipt path only settles the default token.
 - `grabJob(jobId, providerAgentId)` is the Provider self-assignment function.
   Reverts if job is not in Funded state, already assigned, provider
   reputation is below `minProviderReputation`, or the caller is the buyer

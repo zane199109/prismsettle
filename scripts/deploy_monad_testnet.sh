@@ -154,9 +154,45 @@ echo "  PrismSettleJob:   $JOB_ADDR"
 echo ""
 
 # ========================
-# 5. 回填 .env
+# 5. 角色授权 + 仲裁方注册
 # ========================
-echo "[5/6] 更新 .env 的前端合约地址..."
+echo "[5/7] 角色授权 + 仲裁方注册..."
+
+if [ -n "$EVALUATOR_ADDR" ]; then
+  echo "  Evaluator 地址: $EVALUATOR_ADDR"
+
+  echo "  grantRole(REGISTRY_EVALUATOR_ROLE)..."
+  cast send "$REGISTRY_ADDR" "grantRole(bytes32,address)" "$(cast keccak "REGISTRY_EVALUATOR_ROLE")" "$EVALUATOR_ADDR" \
+    --private-key "$DEPLOYER_KEY_WITH_PREFIX" --rpc-url "$MONAD_RPC" --slow 2>&1 | grep -E "status|transactionHash" | head -2
+
+  echo "  grantRole(COMMERCE_EVALUATOR_ROLE)..."
+  cast send "$JOB_ADDR" "grantRole(bytes32,address)" "$(cast keccak "COMMERCE_EVALUATOR_ROLE")" "$EVALUATOR_ADDR" \
+    --private-key "$DEPLOYER_KEY_WITH_PREFIX" --rpc-url "$MONAD_RPC" --slow 2>&1 | grep -E "status|transactionHash" | head -2
+
+  echo "  grantRole(RESOLVER_ROLE)..."
+  cast send "$HOOK_ADDR" "grantRole(bytes32,address)" "$(cast keccak "RESOLVER_ROLE")" "$EVALUATOR_ADDR" \
+    --private-key "$DEPLOYER_KEY_WITH_PREFIX" --rpc-url "$MONAD_RPC" --slow 2>&1 | grep -E "status|transactionHash" | head -2
+
+  EVALUATOR_KEY=$(grep "^PRISM_EVALUATOR_KEY=" "$ENV_FILE" | head -1 | cut -d= -f2 | tr -d ' \t\n\r')
+  if [ -n "$EVALUATOR_KEY" ]; then
+    EVALUATOR_KEY_WITH_PREFIX="0x${EVALUATOR_KEY}"
+    echo "  registerArbitrator(agentId=0x4444, feeBps=500, recipient=自己)..."
+    cast send "$HOOK_ADDR" "registerArbitrator(uint256,uint256,address)" 17476 500 "$EVALUATOR_ADDR" \
+      --private-key "$EVALUATOR_KEY_WITH_PREFIX" --rpc-url "$MONAD_RPC" --slow 2>&1 | grep -E "status|transactionHash" | head -2
+    unset EVALUATOR_KEY EVALUATOR_KEY_WITH_PREFIX
+  else
+    echo "  ⚠️ .env 未设置 PRISM_EVALUATOR_KEY，跳过仲裁方注册（需手动 cast send registerArbitrator）"
+  fi
+else
+  echo "  ⚠️ 未设置 EVALUATOR_ADDRESS，跳过角色授权（Deploy.s.sol 内部授权逻辑另行处理）"
+fi
+
+echo ""
+
+# ========================
+# 6. 回填 .env
+# ========================
+echo "[6/7] 更新 .env 的前端合约地址..."
 
 # 用 python 做精准替换（避免 sed 跨平台问题）
 python3 - "$ENV_FILE" "$REGISTRY_ADDR" "$JOB_ADDR" "$HOOK_ADDR" "$TOKEN_ADDR" <<'PYEOF'
@@ -192,9 +228,9 @@ PYEOF
 echo ""
 
 # ========================
-# 6. 写部署日志
+# 7. 写部署日志
 # ========================
-echo "[6/6] 写部署日志..."
+echo "[7/7] 写部署日志..."
 
 mkdir -p "$ROOT/docs"
 cat > "$DEPLOY_LOG" <<EOF

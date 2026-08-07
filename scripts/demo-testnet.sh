@@ -30,10 +30,10 @@ header(){ echo -e "\n${BOLD}━━━ $* ━━━${NC}"; }
 
 # ── Config ───────────────────────────────────────────────────────────────────
 RPC="https://testnet-rpc.monad.xyz"
-TOKEN="0x90570a62436E201570C58B19B99d6eF77f76a62D"
-REGISTRY="0x9B4F5056AB82d5E3b75D28a9288cFE754a3e84E9"
-JOB="0x4DD3275b169b386596034d2066430971A1F07f1e"
-HOOK="0xa230ceb08D3dF2BAEeFF44260e9a118f96271eD8"
+TOKEN="0x252e44550f8B9997901e5540FC0E1dA52Ab099C6"
+REGISTRY="0xA82937ad81e8aB775c9B32F363CE5E8564207739"
+JOB="0x4B09DB038dF842277f3f1aD4500b9BEDBFcB47cB"
+HOOK="0x740c2969e537706A4f4757166e5eBEeD0E4DAD15"
 FUND_AMOUNT=100000000000000000000  # 100 USDC (18 decimals)
 
 # Deployer key: try env var, then .env
@@ -137,8 +137,8 @@ header "Step 7: Create Job"
 DEADLINE=$(( $(date +%s) + 3600 ))  # 1 hour from now
 info "Creating job (agentId=0x1111, deadline=$DEADLINE, hook=$HOOK)..."
 TX=$(cast send --rpc-url "$RPC" --private-key "$BUYER_KEY" \
-  "$JOB" "createJob(uint256,uint256,uint64,address,uint96)" \
-  0x1111 0 "$DEADLINE" "$HOOK" 0 --json)
+  "$JOB" "createJob(uint256,uint256,uint64,address,uint96,address)" \
+  0x1111 0 "$DEADLINE" "$HOOK" 0 0x0000000000000000000000000000000000000000 --json)
 TX_HASH=$(echo "$TX" | jq -r '.transactionHash')
 # Extract jobId from JobCreated event (topic[2] = indexed jobId)
 JOB_ID=$(cast receipt --rpc-url "$RPC" "$TX_HASH" --json | jq -r '.logs[0].topics[2]')

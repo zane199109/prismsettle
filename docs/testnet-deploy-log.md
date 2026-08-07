@@ -1,6 +1,6 @@
 # Monad Testnet 部署日志
 
-**部署时间：** 2026-08-07 12:34:02 UTC
+**部署时间：** 2026-08-07 15:16:37 UTC
 **部署账户：** 0x8EB3Fe3dDe56Cab0CDf32db3e6E5bA865596BE2C
 **网络：** Monad Testnet (chainId=10143)
 **RPC：** https://testnet-rpc.monad.xyz
@@ -10,18 +10,18 @@
 
 | 合约 | 地址 | Explorer |
 |------|------|----------|
-| MockERC20 (测试 USDC) | 0x90570a62436E201570C58B19B99d6eF77f76a62D | [https://testnet.monadexplorer.com/address/0x90570a62436E201570C58B19B99d6eF77f76a62D](https://testnet.monadexplorer.com/address/0x90570a62436E201570C58B19B99d6eF77f76a62D) |
-| PrismSettleRegistry | 0x9B4F5056AB82d5E3b75D28a9288cFE754a3e84E9 | [https://testnet.monadexplorer.com/address/0x9B4F5056AB82d5E3b75D28a9288cFE754a3e84E9](https://testnet.monadexplorer.com/address/0x9B4F5056AB82d5E3b75D28a9288cFE754a3e84E9) |
-| ArbitrationHook | 0xa230ceb08D3dF2BAEeFF44260e9a118f96271eD8 | [https://testnet.monadexplorer.com/address/0xa230ceb08D3dF2BAEeFF44260e9a118f96271eD8](https://testnet.monadexplorer.com/address/0xa230ceb08D3dF2BAEeFF44260e9a118f96271eD8) |
-| PrismSettleJob | 0x4DD3275b169b386596034d2066430971A1F07f1e | [https://testnet.monadexplorer.com/address/0x4DD3275b169b386596034d2066430971A1F07f1e](https://testnet.monadexplorer.com/address/0x4DD3275b169b386596034d2066430971A1F07f1e) |
+| MockERC20 (测试 USDC) | 0x252e44550f8B9997901e5540FC0E1dA52Ab099C6 | [https://testnet.monadexplorer.com/address/0x252e44550f8B9997901e5540FC0E1dA52Ab099C6](https://testnet.monadexplorer.com/address/0x252e44550f8B9997901e5540FC0E1dA52Ab099C6) |
+| PrismSettleRegistry | 0xA82937ad81e8aB775c9B32F363CE5E8564207739 | [https://testnet.monadexplorer.com/address/0xA82937ad81e8aB775c9B32F363CE5E8564207739](https://testnet.monadexplorer.com/address/0xA82937ad81e8aB775c9B32F363CE5E8564207739) |
+| ArbitrationHook | 0x740c2969e537706A4f4757166e5eBEeD0E4DAD15 | [https://testnet.monadexplorer.com/address/0x740c2969e537706A4f4757166e5eBEeD0E4DAD15](https://testnet.monadexplorer.com/address/0x740c2969e537706A4f4757166e5eBEeD0E4DAD15) |
+| PrismSettleJob | 0x4B09DB038dF842277f3f1aD4500b9BEDBFcB47cB | [https://testnet.monadexplorer.com/address/0x4B09DB038dF842277f3f1aD4500b9BEDBFcB47cB](https://testnet.monadexplorer.com/address/0x4B09DB038dF842277f3f1aD4500b9BEDBFcB47cB) |
 
 ## 角色配置
 
 | 角色 | 持有人 |
 |------|--------|
-| REGISTRY_EVALUATOR_ROLE | 0x8EB3Fe3dDe56Cab0CDf32db3e6E5bA865596BE2C |
-| COMMERCE_EVALUATOR_ROLE | 0x8EB3Fe3dDe56Cab0CDf32db3e6E5bA865596BE2C |
-| RESOLVER_ROLE | 0x8EB3Fe3dDe56Cab0CDf32db3e6E5bA865596BE2C |
+| REGISTRY_EVALUATOR_ROLE | 0xcc6142f3f79Dd1d42FC0446C5B7218C5F520021E |
+| COMMERCE_EVALUATOR_ROLE | 0xcc6142f3f79Dd1d42FC0446C5B7218C5F520021E |
+| RESOLVER_ROLE | 0xcc6142f3f79Dd1d42FC0446C5B7218C5F520021E |
 
 ## 4 个官方 Agent
 
@@ -49,15 +49,23 @@
 ```
 Warning: This is a nightly build of Foundry. It is recommended to use the latest stable version. To mute this warning set `FOUNDRY_DISABLE_NIGHTLY_WARNING` in your environment. 
 
-No files changed, compilation skipped
+Compiling 1 files with Solc 0.8.28
+Solc 0.8.28 finished in 3.51s
+Compiler run successful with warnings:
+Warning (2018): Function state mutability can be restricted to view
+   --> src/ArbitrationHook.sol:224:5:
+    |
+224 |     function onSubmitted(uint256 jobId) external {
+    |     ^ (Relevant source part starts here and spans across multiple lines).
+
 Script ran successfully.
 
 == Logs ==
-  MockERC20: 0x90570a62436E201570C58B19B99d6eF77f76a62D
-  Registry: 0x9B4F5056AB82d5E3b75D28a9288cFE754a3e84E9
-  ArbitrationHook: 0xa230ceb08D3dF2BAEeFF44260e9a118f96271eD8
-  PrismSettleJob: 0x4DD3275b169b386596034d2066430971A1F07f1e
-  Evaluator: 0x8EB3Fe3dDe56Cab0CDf32db3e6E5bA865596BE2C
+  MockERC20: 0x252e44550f8B9997901e5540FC0E1dA52Ab099C6
+  Registry: 0xA82937ad81e8aB775c9B32F363CE5E8564207739
+  ArbitrationHook: 0x740c2969e537706A4f4757166e5eBEeD0E4DAD15
+  PrismSettleJob: 0x4B09DB038dF842277f3f1aD4500b9BEDBFcB47cB
+  Evaluator: 0xcc6142f3f79Dd1d42FC0446C5B7218C5F520021E
   Facilitator: 0x7f6a2850669202519f0FE8aa912451238820Db86
 
 ## Setting up 1 EVM.
@@ -66,11 +74,11 @@ Script ran successfully.
 
 Chain 10143
 
-Estimated gas price: 203.048828126 gwei
+Estimated gas price: 204.602518377 gwei
 
-Estimated total gas used for script: 10030052
+Estimated total gas used for script: 10102191
 
-Estimated amount required: 2.036590304642842552 MON
+Estimated amount required: 2.066933719725464007 MON
 
 ==========================
 

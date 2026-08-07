@@ -50,9 +50,9 @@ web3:
       abi_type: "erc20"
       rpc_urls:
         - "https://testnet-rpc.monad.xyz"
-      contract_addr: "0x9B4F5056AB82d5E3b75D28a9288cFE754a3e84E9"
+      contract_addr: "0xA82937ad81e8aB775c9B32F363CE5E8564207739"
       contract_parser: PrismSettle
-      start_block: 51678000
+      start_block: 51701940
       confirmations: 5
       decimals: 18
       workers: 2
@@ -79,9 +79,9 @@ web3:
       abi_type: "erc20"
       rpc_urls:
         - "https://testnet-rpc.monad.xyz"
-      contract_addr: "0x4DD3275b169b386596034d2066430971A1F07f1e"
+      contract_addr: "0x4B09DB038dF842277f3f1aD4500b9BEDBFcB47cB"
       contract_parser: PrismSettleJob
-      start_block: 51678000
+      start_block: 51701940
       confirmations: 5
       decimals: 18
       workers: 2
@@ -108,9 +108,9 @@ web3:
       abi_type: "erc20"
       rpc_urls:
         - "https://testnet-rpc.monad.xyz"
-      contract_addr: "0xa230ceb08D3dF2BAEeFF44260e9a118f96271eD8"
+      contract_addr: "0x740c2969e537706A4f4757166e5eBEeD0E4DAD15"
       contract_parser: PrismSettleHook
-      start_block: 51678000
+      start_block: 51701940
       confirmations: 5
       decimals: 18
       workers: 2
@@ -139,9 +139,9 @@ evaluator:
   chain_id: 10143
   chain_name: "monad_testnet"
   rpc_url: "https://testnet-rpc.monad.xyz"
-  registry_addr: "0x9B4F5056AB82d5E3b75D28a9288cFE754a3e84E9"
-  job_addr: "0x4DD3275b169b386596034d2066430971A1F07f1e"
-  hook_addr: "0xa230ceb08D3dF2BAEeFF44260e9a118f96271eD8"
+  registry_addr: "0xA82937ad81e8aB775c9B32F363CE5E8564207739"
+  job_addr: "0x4B09DB038dF842277f3f1aD4500b9BEDBFcB47cB"
+  hook_addr: "0x740c2969e537706A4f4757166e5eBEeD0E4DAD15"
   poll_interval: 2
   batch_size: 20
   keeper_tick_sec: 30
