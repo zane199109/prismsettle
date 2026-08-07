@@ -161,24 +161,37 @@ echo "[5/7] 角色授权 + 仲裁方注册..."
 if [ -n "$EVALUATOR_ADDR" ]; then
   echo "  Evaluator 地址: $EVALUATOR_ADDR"
 
+  # 显式校验的 cast send 包装：失败立即打印错误并退出，杜绝被 grep 静默吞掉
+  cast_checked() {
+    local label="$1"; shift
+    local out
+    out=$(cast send "$@" 2>&1) || {
+      echo "  ❌ ${label} 失败："
+      echo "$out" | tail -6
+      unset DEPLOYER_KEY EVALUATOR_ADDRESS FACILITATOR_ADDRESS EVALUATOR_KEY EVALUATOR_KEY_WITH_PREFIX 2>/dev/null
+      exit 1
+    }
+    echo "$out" | grep -E "status|transactionHash" | head -2
+  }
+
   echo "  grantRole(REGISTRY_EVALUATOR_ROLE)..."
-  cast send "$REGISTRY_ADDR" "grantRole(bytes32,address)" "$(cast keccak "REGISTRY_EVALUATOR_ROLE")" "$EVALUATOR_ADDR" \
-    --private-key "$DEPLOYER_KEY_WITH_PREFIX" --rpc-url "$MONAD_RPC" --slow 2>&1 | grep -E "status|transactionHash" | head -2
+  cast_checked "grantRole(REGISTRY_EVALUATOR_ROLE)" "$REGISTRY_ADDR" "grantRole(bytes32,address)" "$(cast keccak "REGISTRY_EVALUATOR_ROLE")" "$EVALUATOR_ADDR" \
+    --private-key "$DEPLOYER_KEY_WITH_PREFIX" --rpc-url "$MONAD_RPC"
 
   echo "  grantRole(COMMERCE_EVALUATOR_ROLE)..."
-  cast send "$JOB_ADDR" "grantRole(bytes32,address)" "$(cast keccak "COMMERCE_EVALUATOR_ROLE")" "$EVALUATOR_ADDR" \
-    --private-key "$DEPLOYER_KEY_WITH_PREFIX" --rpc-url "$MONAD_RPC" --slow 2>&1 | grep -E "status|transactionHash" | head -2
+  cast_checked "grantRole(COMMERCE_EVALUATOR_ROLE)" "$JOB_ADDR" "grantRole(bytes32,address)" "$(cast keccak "COMMERCE_EVALUATOR_ROLE")" "$EVALUATOR_ADDR" \
+    --private-key "$DEPLOYER_KEY_WITH_PREFIX" --rpc-url "$MONAD_RPC"
 
   echo "  grantRole(RESOLVER_ROLE)..."
-  cast send "$HOOK_ADDR" "grantRole(bytes32,address)" "$(cast keccak "RESOLVER_ROLE")" "$EVALUATOR_ADDR" \
-    --private-key "$DEPLOYER_KEY_WITH_PREFIX" --rpc-url "$MONAD_RPC" --slow 2>&1 | grep -E "status|transactionHash" | head -2
+  cast_checked "grantRole(RESOLVER_ROLE)" "$HOOK_ADDR" "grantRole(bytes32,address)" "$(cast keccak "RESOLVER_ROLE")" "$EVALUATOR_ADDR" \
+    --private-key "$DEPLOYER_KEY_WITH_PREFIX" --rpc-url "$MONAD_RPC"
 
   EVALUATOR_KEY=$(grep "^PRISM_EVALUATOR_KEY=" "$ENV_FILE" | head -1 | cut -d= -f2 | tr -d ' \t\n\r')
   if [ -n "$EVALUATOR_KEY" ]; then
     EVALUATOR_KEY_WITH_PREFIX="0x${EVALUATOR_KEY}"
     echo "  registerArbitrator(agentId=0x4444, feeBps=500, recipient=自己)..."
-    cast send "$HOOK_ADDR" "registerArbitrator(uint256,uint256,address)" 17476 500 "$EVALUATOR_ADDR" \
-      --private-key "$EVALUATOR_KEY_WITH_PREFIX" --rpc-url "$MONAD_RPC" --slow 2>&1 | grep -E "status|transactionHash" | head -2
+    cast_checked "registerArbitrator" "$HOOK_ADDR" "registerArbitrator(uint256,uint256,address)" 17476 500 "$EVALUATOR_ADDR" \
+      --private-key "$EVALUATOR_KEY_WITH_PREFIX" --rpc-url "$MONAD_RPC"
     unset EVALUATOR_KEY EVALUATOR_KEY_WITH_PREFIX
   else
     echo "  ⚠️ .env 未设置 PRISM_EVALUATOR_KEY，跳过仲裁方注册（需手动 cast send registerArbitrator）"

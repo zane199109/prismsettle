@@ -28,6 +28,8 @@ import {
   JOB_ABI,
   HOOK_CONTRACT_ADDRESS,
   HOOK_ABI,
+  PAYMENT_TOKEN_ADDRESS,
+  WMON_ADDRESS,
   contractsReady,
 } from "@/lib/contracts";
 
@@ -136,6 +138,24 @@ function FundFlowFromChain({ jobId }: { jobId: string }) {
     query: { enabled: ready && !Number.isNaN(Number(jobId)) },
   });
 
+  // Per-job payment token (address(0) on-chain resolves to the contract default).
+  const { data: paymentToken } = useReadContract({
+    address: JOB_CONTRACT_ADDRESS,
+    abi: JOB_ABI,
+    functionName: "getJobPaymentToken",
+    args: [jobIdBig],
+    query: { enabled: ready && !Number.isNaN(Number(jobId)) },
+  });
+
+  // Human-readable currency label for the job's token.
+  function currencyLabel(): string {
+    const t = (paymentToken as `0x${string}` | undefined) ?? "";
+    if (!t) return "…";
+    if (t.toLowerCase() === WMON_ADDRESS.toLowerCase()) return "MON (WMON)";
+    if (PAYMENT_TOKEN_ADDRESS && t.toLowerCase() === PAYMENT_TOKEN_ADDRESS.toLowerCase()) return "USDC";
+    return t.slice(0, 10) + "…";
+  }
+
   if (!ready) {
     return (
       <section className="mt-6">
@@ -188,6 +208,10 @@ function FundFlowFromChain({ jobId }: { jobId: string }) {
           Arbitration hook attached: <code className="font-mono text-white/60">{hookAddr}</code>
         </p>
       )}
+      <p className="mt-1 text-[11px] text-white/40">
+        Escrow currency: <span className="font-mono text-white/60">{currencyLabel()}</span>
+        {" "}({Number(amount) > 0 ? "funded" : "unfunded"})
+      </p>
     </section>
   );
 }
