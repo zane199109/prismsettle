@@ -99,23 +99,24 @@ curl -s -H "X-API-TOKEN: dev-token" \
 ### 3.2 通过命令行（备选）
 
 ```bash
-# 创建 Job（签名：createJob(uint256 agentId, uint256 parentJobId, uint64 deadline, address hook, uint96 minProviderReputation)）
+# 创建 Job（签名：createJob(uint256 agentId, uint256 parentJobId, uint64 deadline, address hook, uint96 minProviderReputation, address paymentToken)）
 JOB=0x4B09DB038dF842277f3f1aD4500b9BEDBFcB47cB
 REGISTRY=0xA82937ad81e8aB775c9B32F363CE5E8564207739
 HOOK=0x740c2969e537706A4f4757166e5eBEeD0E4DAD15
 BUYER_KEY=5138c7d2e167ec1039616451b01a5b2a5644c138d271843a84961ab2f6c9227b
 
-# agentId=0x1111, parentJobId=0, deadline=1小时后, hook=ArbitrationHook, minProviderReputation=0.5e18
+# agentId=0x1111, parentJobId=0, deadline=1小时后, hook=ArbitrationHook, minProviderReputation=0.5e18,
+# paymentToken=0x0（合约默认 USDC）；传 WMON 地址则 escrow 用 WMON
 DEADLINE=$(( $(date +%s) + 3600 ))
-cast send $JOB "createJob(uint256,uint256,uint64,address,uint96)" \
-  0x1111 0 $DEADLINE $HOOK 500000000000000000 \
+cast send $JOB "createJob(uint256,uint256,uint64,address,uint96,address)" \
+  0x1111 0 $DEADLINE $HOOK 500000000000000000 0x0000000000000000000000000000000000000000 \
   --rpc-url https://testnet-rpc.monad.xyz \
   --private-key $BUYER_KEY
 
 # 查看 Job 事件（获取 jobId）
 cast logs --rpc-url https://testnet-rpc.monad.xyz \
   --address $JOB \
-  --event "JobCreated(uint256,uint256,address,uint64,address,uint96)" \
+  --event "JobCreated(uint256,uint256,address,uint64,address,uint96,address)" \
   --from-block latest
 ```
 
@@ -287,10 +288,10 @@ cast call $JOB "facilitator()(address)" --rpc-url https://testnet-rpc.monad.xyz
 ### 9.1 快速演示流（命令行）
 
 ```bash
-# 1. 创建 Job（agentId=0x1111, hook=ArbitrationHook, minProviderReputation=0.2e18）
+# 1. 创建 Job（agentId=0x1111, hook=ArbitrationHook, minProviderReputation=0.2e18, paymentToken=0=默认 USDC）
 DEADLINE=$(( $(date +%s) + 3600 ))
-TX=$(cast send $JOB "createJob(uint256,uint256,uint64,address,uint96)" \
-  0x1111 0 $DEADLINE $HOOK 200000000000000000 \
+TX=$(cast send $JOB "createJob(uint256,uint256,uint64,address,uint96,address)" \
+  0x1111 0 $DEADLINE $HOOK 200000000000000000 0x0000000000000000000000000000000000000000 \
   --rpc-url https://testnet-rpc.monad.xyz \
   --private-key $BUYER_KEY --json)
 JOB_ID=$(echo "$TX" | jq -r '.logs[0].topics[2]')  # JobCreated indexed jobId
@@ -318,6 +319,42 @@ cast send $JOB "complete(uint256,uint96)" $JOB_ID 900000000000000000 \
 cast call $JOB "getJobState(uint256)(uint8)" $JOB_ID \
   --rpc-url https://testnet-rpc.monad.xyz
 ```
+
+### 9.2 MON 流验证（WMON 结算，per-token）
+
+前置：钱包有原生 MON（faucet.monad.xyz 领取）。WMON 是 Wrapped MON（ERC-20，WETH9 风格：`deposit()` wrap / `withdraw(uint256)` unwrap），testnet 官方地址 `0xFb8bf4c1CC7a94c73D209a149eA2AbEa852BC541`（链上已验证）。
+
+```bash
+# 1. Wrap MON → WMON（100 MON）
+cast send 0xFb8bf4c1CC7a94c73D209a149eA2AbEa852BC541 "deposit()" \
+  --value 100ether --rpc-url https://testnet-rpc.monad.xyz --private-key $BUYER_KEY
+
+# 2. 创建 Job（paymentToken = WMON 地址，escrow 用 WMON）
+DEADLINE=$(( $(date +%s) + 3600 ))
+TX=$(cast send $JOB "createJob(uint256,uint256,uint64,address,uint96,address)" \
+  0x1111 0 $DEADLINE $HOOK 0 0xFb8bf4c1CC7a94c73D209a149eA2AbEa852BC541 \
+  --rpc-url https://testnet-rpc.monad.xyz --private-key $BUYER_KEY --json)
+JOB_ID=$(echo "$TX" | jq -r '.logs[0].topics[2]')
+# JobCreated 事件 data 尾部应含 WMON 地址（paymentToken 字段）
+
+# 3. Approve WMON + 托管 100 WMON（escrow 在 WMON）
+cast send 0xFb8bf4c1CC7a94c73D209a149eA2AbEa852BC541 "approve(address,uint256)" $JOB 100000000000000000000 \
+  --rpc-url https://testnet-rpc.monad.xyz --private-key $BUYER_KEY
+cast send $JOB "fundViaToken(uint256,uint256,bytes)" $JOB_ID 100000000000000000000 0x \
+  --rpc-url https://testnet-rpc.monad.xyz --private-key $BUYER_KEY
+
+# 4. 抢单 + 提交 + 完成（与 9.1 相同）
+# 5. 验证：provider 收到 100 WMON、job 合约 WMON 余额 0
+cast call 0xFb8bf4c1CC7a94c73D209a149eA2AbEa852BC541 "balanceOf(address)(uint256)" $PROVIDER \
+  --rpc-url https://testnet-rpc.monad.xyz
+cast call 0xFb8bf4c1CC7a94c73D209a149eA2AbEa852BC541 "balanceOf(address)(uint256)" $JOB \
+  --rpc-url https://testnet-rpc.monad.xyz
+```
+
+注意：
+> - x402 receipt 路径仅支持默认 token——WMON job 走 receipt 会 revert「token mismatch」
+> - 押金（reject/dispute）按 job 币种收取：WMON job 的押金是 WMON，不是 USDC
+> - 前端 Create Job 页可选「USDC / MON」，MON 模式余额不足时会显示一键 wrap 面板
 
 ---
 
