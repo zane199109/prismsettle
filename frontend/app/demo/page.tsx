@@ -4,10 +4,10 @@
 // Shows the full PrismSettle flow with real on-chain data from anvil.
 
 import { useEffect, useState } from "react";
-import { PageHeader } from "@/components/PageHeader";
+
 import { REGISTRY_ADDRESS, REGISTRY_ABI, JOB_CONTRACT_ADDRESS, JOB_ABI, MONAD_TESTNET_RPC } from "@/lib/contracts";
 import { createPublicClient, http } from "viem";
-import { hardhat } from "viem/chains";
+import { monadTestnet } from "viem/chains";
 import { CheckCircle, Clock, Lock, Package, Shield, Star, Zap } from "lucide-react";
 
 // Demo agents (matches Deploy.s.sol Seed Phase)
@@ -36,7 +36,7 @@ export default function DemoPage() {
     async function init() {
       try {
         const c = createPublicClient({
-          chain: hardhat,
+          chain: monadTestnet,
           transport: http(MONAD_TESTNET_RPC),
         });
         setClient(c);
@@ -75,7 +75,7 @@ export default function DemoPage() {
 
   return (
     <div className="min-h-screen">
-      <PageHeader />
+      
       <main className="mx-auto max-w-5xl px-6 py-12">
         {/* Header */}
         <div className="mb-10 text-center">
@@ -83,7 +83,7 @@ export default function DemoPage() {
             How PrismSettle Works
           </h1>
           <p className="mt-2 text-white/60">
-            No wallet needed. Real data from anvil below.
+            Live data from Monad testnet. No wallet needed.
           </p>
         </div>
 
@@ -148,7 +148,8 @@ export default function DemoPage() {
         <section className="rounded-xl border border-white/10 bg-prism-surface/40 p-6">
           <h2 className="mb-1 text-lg font-semibold text-white">Demo Transaction Log</h2>
           <p className="mb-5 text-sm text-white/50">
-            These are real transactions from a previous demo run on anvil.
+            These are real transactions from a previous demo run on testnet.
+            Run <code className="rounded bg-white/5 px-1 py-0.5 font-mono text-xs text-prism-accent">bash scripts/demo-testnet.sh</code> on Monad testnet to create fresh ones.
           </p>
           <div className="space-y-3">
             {DEMO_TXS.map((tx, i) => (
@@ -168,12 +169,12 @@ export default function DemoPage() {
 
         {/* Verify yourself */}
         <section className="mt-8 text-center text-sm text-white/40">
-          <p>
+          <p className="text-xs text-white/30">
             Want to verify? Run{" "}
             <code className="rounded bg-white/5 px-1.5 py-0.5 font-mono text-xs text-prism-accent">
-              bash scripts/demo-minimal.sh
+              bash scripts/demo-testnet.sh
             </code>{" "}
-            to create fresh transactions.
+            to create fresh transactions on Monad testnet.
           </p>
         </section>
       </main>

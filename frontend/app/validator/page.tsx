@@ -5,7 +5,7 @@
 // DEV-PLAN §Phase 8 任务 8.6, wired in Phase 9. P0-B extended with Validate tab.
 //
 // Contract calls (PrismSettleRegistry):
-//   stake()                       payable — lock ETH as stake (MIN_STAKE = 5 ether)
+//   stake()                       payable — lock MON as stake (MIN_STAKE = 5 ether)
 //   unstake(amount)               — begin 7-day unlock period
 //   withdrawUnstaked()            — withdraw after lock expires
 //   submitValidation(agentId, score, proofHash, jobId, source=0)  — Validator path
@@ -15,7 +15,7 @@ import { Lock, Unlock, ArrowDownToLine, Loader2, CheckCircle2 } from "lucide-rea
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract } from "wagmi";
 import { monadTestnet } from "wagmi/chains";
 import { formatEther } from "viem";
-import { PageHeader } from "@/components/PageHeader";
+
 import { ValidatorLeaderboard } from "@/components/validators/ValidatorLeaderboard";
 import { ValidationRecords } from "@/components/validators/ValidationRecords";
 import { SlashHistory } from "@/components/validators/SlashHistory";
@@ -64,7 +64,7 @@ export default function ValidatorConsolePage() {
 
   // P1-3: Validator earnings tracking (mock). Aggregate this wallet's
   // PRISM_VALIDATION_SUBMITTED events and multiply by a mock unit reward
-  // of 0.001 ETH. Real reward logic lands in V2 (PRD FR-C11).
+  // of 0.001 MON. Real reward logic lands in V2 (PRD FR-C11).
   const { events: myValidations } = useEvents({
     eventType: "PRISM_VALIDATION_SUBMITTED",
     size: 200,
@@ -159,7 +159,7 @@ export default function ValidatorConsolePage() {
   }
 
   function parseAmount(input: string): bigint | null {
-    // Convert ETH decimal string to wei without floating-point precision loss.
+    // Convert MON decimal string to wei without floating-point precision loss.
     // Handles arbitrary decimals by string-splitting on "." instead of
     // parseFloat, which would lose precision on values like 5.123456789012345678.
     try {
@@ -243,12 +243,12 @@ export default function ValidatorConsolePage() {
 
   return (
     <div className="min-h-screen">
-      <PageHeader />
+      
       <main id="main" className="mx-auto max-w-7xl px-6 py-8">
         <div className="mb-6">
           <h1 className="text-2xl font-bold tracking-tight">Validator</h1>
           <p className="mt-1 text-sm text-white/60">
-            Stake ETH to validate agent outputs. Unstake enters a 7-day lock before withdrawal.
+            Stake MON to validate agent outputs. Unstake enters a 7-day lock before withdrawal.
           </p>
         </div>
 
@@ -273,13 +273,13 @@ export default function ValidatorConsolePage() {
                 <Stat
                   label="Your Stake"
                   value={formatEther(stakeAmount)}
-                  unit="ETH"
+                  unit="MON"
                   tone="text-emerald-400"
                 />
                 <Stat
                   label="Pending Unstake"
                   value={pendingUnstake > 0n ? formatEther(pendingUnstake) : "0"}
-                  unit="ETH"
+                  unit="MON"
                   tone={pendingUnstake > 0n ? "text-amber-400" : "text-white/60"}
                 />
                 <Stat
@@ -303,10 +303,10 @@ export default function ValidatorConsolePage() {
                     <span className="font-mono text-xl font-bold text-prism-glow">
                       {mockRewardEth.toFixed(3)}
                     </span>
-                    <span className="text-[10px] text-white/40">ETH</span>
+                    <span className="text-[10px] text-white/40">MON</span>
                   </div>
                   <div className="mt-1 text-[10px] text-white/40">
-                    {myValidationCount} validations · 0.001 ETH each (mock rate, V2 lands in FR-C11)
+                    {myValidationCount} validations · 0.001 MON each (mock rate, V2 lands in FR-C11)
                   </div>
                 </div>
               </div>
@@ -323,7 +323,7 @@ export default function ValidatorConsolePage() {
                 <form onSubmit={handleSubmit} className="space-y-3">
                   {action === "stake" && (
                     <div>
-                      <label className="mb-1 block text-xs text-white/60">amount (ETH)</label>
+                      <label className="mb-1 block text-xs text-white/60">amount (MON)</label>
                       <input
                         type="text"
                         required
@@ -332,13 +332,13 @@ export default function ValidatorConsolePage() {
                         placeholder="5.0"
                         className="w-full rounded-md border border-white/10 bg-prism-surface/60 px-3 py-1.5 font-mono text-sm text-white placeholder:text-white/30 focus:border-prism-accent focus:outline-none"
                       />
-                      <p className="mt-1 text-[11px] text-white/40">MIN_STAKE = 5 ETH to submit validations.</p>
+                      <p className="mt-1 text-[11px] text-white/40">MIN_STAKE = 5 MON to submit validations.</p>
                     </div>
                   )}
 
                   {action === "unstake" && (
                     <div>
-                      <label className="mb-1 block text-xs text-white/60">amount (ETH)</label>
+                      <label className="mb-1 block text-xs text-white/60">amount (MON)</label>
                       <input
                         type="text"
                         required
@@ -348,7 +348,7 @@ export default function ValidatorConsolePage() {
                         className="w-full rounded-md border border-white/10 bg-prism-surface/60 px-3 py-1.5 font-mono text-sm text-white placeholder:text-white/30 focus:border-prism-accent focus:outline-none"
                       />
                       <p className="mt-1 text-[11px] text-white/40">
-                        Current stake: {formatEther(stakeAmount)} ETH. Enters 7-day lock.
+                        Current stake: {formatEther(stakeAmount)} MON. Enters 7-day lock.
                       </p>
                     </div>
                   )}
@@ -357,7 +357,7 @@ export default function ValidatorConsolePage() {
                     <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-2 text-[11px] text-amber-300">
                       {pendingUnstake > 0n
                         ? lockExpired
-                          ? `Ready to withdraw ${formatEther(pendingUnstake)} ETH.`
+                          ? `Ready to withdraw ${formatEther(pendingUnstake)} MON.`
                           : `Lock active. Unlocks at epoch ${unstakeAt.toString()}.`
                         : "No pending unstake."}
                     </p>
@@ -413,7 +413,7 @@ export default function ValidatorConsolePage() {
                         source=0 (Validator). Evaluator source=1/2 is auto-triggered off-chain after job completion / arbitration.
                       </p>
                       {stakeAmount === 0n && (
-                        <p className="text-[11px] text-amber-400">Stake at least 5 ETH first — Validators only (FR-C03).</p>
+                        <p className="text-[11px] text-amber-400">Stake at least 5 MON first — Validators only (FR-C03).</p>
                       )}
                     </div>
                   )}

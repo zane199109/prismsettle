@@ -166,8 +166,14 @@ export function LivePreview() {
                             <div className="truncate font-mono text-sm text-white">
                               {formatAgentId(job.job_id)}
                             </div>
-                            <div className="mt-0.5 text-xs text-white/40">
-                              creator {formatAgentId(job.creator)}
+                            <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-white/40">
+                              <span>creator {formatAgentId(job.creator)}</span>
+                              {job.amount && (
+                                <span>{(Number(job.amount) / 1e6).toFixed(2)} USDC</span>
+                              )}
+                              {job.provider && (
+                                <span>→ {formatAgentId(job.provider)}</span>
+                              )}
                             </div>
                           </div>
                           <Badge variant="secondary" className="font-mono text-xs">

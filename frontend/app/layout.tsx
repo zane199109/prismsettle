@@ -2,9 +2,8 @@ import type { Metadata } from "next";
 import { Orbitron, Exo_2 } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
+import { PageHeader } from "@/components/PageHeader";
 
-// Web3/crypto-grade typography (ui-ux-pro-max recommendation).
-// Orbitron: futuristic geometric headings; Exo 2: readable body.
 const orbitron = Orbitron({
   subsets: ["latin"],
   weight: ["400", "500", "600", "700"],
@@ -39,11 +38,14 @@ export default function RootLayout({
       className={`${orbitron.variable} ${exo2.variable}`}
       suppressHydrationWarning
     >
-      <body className="prism-bg min-h-screen">
+      <body className="min-h-screen bg-[#0a0a0f]">
         <a href="#main" className="skip-link">
           Skip to main content
         </a>
-        <Providers>{children}</Providers>
+        <Providers>
+          <PageHeader />
+          {children}
+        </Providers>
       </body>
     </html>
   );

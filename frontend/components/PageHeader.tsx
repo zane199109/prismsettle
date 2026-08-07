@@ -1,9 +1,8 @@
 "use client";
 
-// Shared page header with brand, primary nav, wallet connect, and a mobile
-// hamburger dropdown (FR-M10). Used across all console routes
-// (agents/jobs/validator/perf/events/dashboard) to keep the chrome consistent
-// and avoid duplicating layout code in each page.
+// Minimal navigation bar — inspired by AgentOn's clean design.
+// Logo | Agents | Jobs | Dashboard | WalletConnect
+// Mobile hamburger menu for md breakpoint and below.
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
@@ -13,10 +12,11 @@ import { WalletConnect } from "@/components/WalletConnect";
 import { cn } from "@/lib/utils";
 
 const NAV = [
-  { href: "/", label: "Home" },
-  { href: "/demo", label: "Demo" },
   { href: "/agents", label: "Agents" },
   { href: "/jobs", label: "Jobs" },
+  { href: "/dashboard", label: "Dashboard" },
+  { href: "/validator", label: "Validate" },
+  { href: "/arbitrator", label: "Arbitrate" },
   { href: "/events", label: "Events" },
 ];
 
@@ -24,21 +24,23 @@ export function PageHeader() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
 
-  // Close the mobile menu whenever the route changes.
   useEffect(() => {
     setMobileOpen(false);
   }, [pathname]);
 
   return (
-    <header className="border-b border-white/10 bg-prism-surface/30 backdrop-blur">
-      <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-        <Link href="/" className="group flex items-center gap-2">
-          <span className="text-xl font-bold tracking-tight">
+    <header className="sticky top-0 z-50 border-b border-white/[0.04] bg-[#0a0a0f]/80 backdrop-blur-xl">
+      <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-3">
+        {/* Logo */}
+        <Link href="/" className="flex items-center gap-2">
+          <span className="text-base font-bold tracking-tight">
             <span className="text-prism-accent">Prism</span>
-            <span className="text-prism-glow">Settle</span>
+            <span className="text-white/80">Settle</span>
           </span>
         </Link>
-        <nav className="hidden items-center gap-0.5 lg:flex">
+
+        {/* Desktop nav */}
+        <nav className="hidden items-center gap-0.5 md:flex">
           {NAV.map((item) => {
             const active =
               item.href === "/"
@@ -49,10 +51,10 @@ export function PageHeader() {
                 key={item.href}
                 href={item.href}
                 className={cn(
-                  "rounded-md px-2.5 py-1.5 text-xs transition-colors",
+                  "rounded-md px-3 py-1.5 text-sm transition-colors",
                   active
-                    ? "bg-prism-accent/20 text-prism-accent"
-                    : "text-white/60 hover:bg-white/5 hover:text-white",
+                    ? "bg-white/[0.06] text-white"
+                    : "text-white/50 hover:text-white/80",
                 )}
               >
                 {item.label}
@@ -60,6 +62,8 @@ export function PageHeader() {
             );
           })}
         </nav>
+
+        {/* Right side */}
         <div className="flex items-center gap-2">
           <WalletConnect />
           <button
@@ -67,7 +71,7 @@ export function PageHeader() {
             aria-label="Toggle navigation menu"
             aria-expanded={mobileOpen}
             onClick={() => setMobileOpen((v) => !v)}
-            className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-white/10 text-white/70 hover:bg-white/5 lg:hidden"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-white/50 hover:bg-white/[0.06] hover:text-white/80 md:hidden"
           >
             {mobileOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
           </button>
@@ -76,8 +80,8 @@ export function PageHeader() {
 
       {/* Mobile dropdown */}
       {mobileOpen && (
-        <nav className="border-t border-white/10 bg-prism-surface/95 backdrop-blur lg:hidden">
-          <div className="mx-auto max-w-7xl space-y-1 px-6 py-3">
+        <nav className="border-t border-white/[0.04] bg-[#0a0a0f]/95 backdrop-blur-xl md:hidden">
+          <div className="mx-auto max-w-7xl space-y-0.5 px-6 py-2">
             {NAV.map((item) => {
               const active =
                 item.href === "/"
@@ -90,8 +94,8 @@ export function PageHeader() {
                   className={cn(
                     "block rounded-md px-3 py-2 text-sm transition-colors",
                     active
-                      ? "bg-prism-accent/20 text-prism-accent"
-                      : "text-white/70 hover:bg-white/5 hover:text-white",
+                      ? "bg-white/[0.06] text-white"
+                      : "text-white/50 hover:text-white/80",
                   )}
                 >
                   {item.label}

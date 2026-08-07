@@ -125,6 +125,8 @@ export const MOCK_JOBS: JobVO[] = [
     evaluator: DEMO_ADDRESSES.dave,
     created_at: hoursAgo(20),
     updated_at: hoursAgo(19),
+    amount: "1000000",
+    provider: DEMO_ADDRESSES.bob,
   },
   {
     job_id: "2",
@@ -134,6 +136,8 @@ export const MOCK_JOBS: JobVO[] = [
     evaluator: "",
     created_at: hoursAgo(8),
     updated_at: hoursAgo(1),
+    amount: "5000000",
+    provider: DEMO_ADDRESSES.dave,
   },
   {
     job_id: "3",
@@ -143,6 +147,8 @@ export const MOCK_JOBS: JobVO[] = [
     evaluator: "",
     created_at: hoursAgo(4),
     updated_at: hoursAgo(3),
+    amount: "2500000",
+    provider: "",
   },
   {
     job_id: "4",
@@ -152,6 +158,8 @@ export const MOCK_JOBS: JobVO[] = [
     evaluator: DEMO_ADDRESSES.dave,
     created_at: hoursAgo(12),
     updated_at: minutesAgo(30),
+    amount: "3000000",
+    provider: DEMO_ADDRESSES.alice,
   },
   {
     job_id: "5",
@@ -161,6 +169,8 @@ export const MOCK_JOBS: JobVO[] = [
     evaluator: "",
     created_at: hoursAgo(48),
     updated_at: hoursAgo(40),
+    amount: "1000000",
+    provider: DEMO_ADDRESSES.carol,
   },
   {
     job_id: "6",
@@ -170,6 +180,8 @@ export const MOCK_JOBS: JobVO[] = [
     evaluator: "",
     created_at: minutesAgo(15),
     updated_at: minutesAgo(15),
+    amount: "750000",
+    provider: "",
   },
   {
     job_id: "7",
@@ -179,6 +191,8 @@ export const MOCK_JOBS: JobVO[] = [
     evaluator: DEMO_ADDRESSES.dave,
     created_at: hoursAgo(30),
     updated_at: hoursAgo(28),
+    amount: "2000000",
+    provider: DEMO_ADDRESSES.carol,
   },
   {
     job_id: "8",
@@ -188,6 +202,8 @@ export const MOCK_JOBS: JobVO[] = [
     evaluator: DEMO_ADDRESSES.dave,
     created_at: hoursAgo(60),
     updated_at: hoursAgo(58),
+    amount: "4000000",
+    provider: DEMO_ADDRESSES.alice,
   },
 ];
 
@@ -204,31 +220,31 @@ export const MOCK_JOBS: JobVO[] = [
 export const MOCK_EVENTS: ChainEvent[] = [
   // --- PRISM_STAKED (5) ---
   {
-    id: 1, chain_name: "prismsettle_registry", event_type: "PRISM_STAKED",
+    id: 1, chain_name: "monad_testnet", event_type: "PRISM_STAKED",
     from: DEMO_ADDRESSES.alice, to: "", value: score(10), symbol: "",
     token_address: "", tx_hash: TX(1), block_number: 1024001, block_time: hoursAgo(70),
     extra: "",
   },
   {
-    id: 2, chain_name: "prismsettle_registry", event_type: "PRISM_STAKED",
+    id: 2, chain_name: "monad_testnet", event_type: "PRISM_STAKED",
     from: DEMO_ADDRESSES.bob, to: "", value: score(15), symbol: "",
     token_address: "", tx_hash: TX(2), block_number: 1032001, block_time: hoursAgo(58),
     extra: "",
   },
   {
-    id: 3, chain_name: "prismsettle_registry", event_type: "PRISM_STAKED",
+    id: 3, chain_name: "monad_testnet", event_type: "PRISM_STAKED",
     from: DEMO_ADDRESSES.carol, to: "", value: score(8), symbol: "",
     token_address: "", tx_hash: TX(3), block_number: 1045001, block_time: hoursAgo(46),
     extra: "",
   },
   {
-    id: 4, chain_name: "prismsettle_registry", event_type: "PRISM_STAKED",
+    id: 4, chain_name: "monad_testnet", event_type: "PRISM_STAKED",
     from: DEMO_ADDRESSES.dave, to: "", value: score(20), symbol: "",
     token_address: "", tx_hash: TX(4), block_number: 1023001, block_time: hoursAgo(71),
     extra: "",
   },
   {
-    id: 5, chain_name: "prismsettle_registry", event_type: "PRISM_STAKED",
+    id: 5, chain_name: "monad_testnet", event_type: "PRISM_STAKED",
     from: DEMO_ADDRESSES.alice, to: "", value: score(5), symbol: "",
     token_address: "", tx_hash: TX(5), block_number: 1058001, block_time: hoursAgo(34),
     extra: "",
@@ -236,73 +252,73 @@ export const MOCK_EVENTS: ChainEvent[] = [
 
   // --- PRISM_VALIDATION_SUBMITTED (12) — mix of sources 0/1/2 across agents ---
   {
-    id: 10, chain_name: "prismsettle_registry", event_type: "PRISM_VALIDATION_SUBMITTED",
+    id: 10, chain_name: "monad_testnet", event_type: "PRISM_VALIDATION_SUBMITTED",
     from: DEMO_ADDRESSES.alice, to: "1", value: score(0.92), symbol: "0",
     token_address: TX(0xaa), tx_hash: TX(10), block_number: 1024010, block_time: hoursAgo(68),
     extra: "jobId=0",
   },
   {
-    id: 11, chain_name: "prismsettle_registry", event_type: "PRISM_VALIDATION_SUBMITTED",
+    id: 11, chain_name: "monad_testnet", event_type: "PRISM_VALIDATION_SUBMITTED",
     from: DEMO_ADDRESSES.bob, to: "1", value: score(0.88), symbol: "0",
     token_address: TX(0xbb), tx_hash: TX(11), block_number: 1024011, block_time: hoursAgo(60),
     extra: "jobId=0",
   },
   {
-    id: 12, chain_name: "prismsettle_registry", event_type: "PRISM_VALIDATION_SUBMITTED",
+    id: 12, chain_name: "monad_testnet", event_type: "PRISM_VALIDATION_SUBMITTED",
     from: DEMO_ADDRESSES.dave, to: "1", value: score(0.95), symbol: "1",
     token_address: TX(0xcc), tx_hash: TX(12), block_number: 1024012, block_time: hoursAgo(19),
     extra: "jobId=1",
   },
   {
-    id: 13, chain_name: "prismsettle_registry", event_type: "PRISM_VALIDATION_SUBMITTED",
+    id: 13, chain_name: "monad_testnet", event_type: "PRISM_VALIDATION_SUBMITTED",
     from: DEMO_ADDRESSES.carol, to: "2", value: score(0.85), symbol: "0",
     token_address: TX(0xdd), tx_hash: TX(13), block_number: 1032010, block_time: hoursAgo(56),
     extra: "jobId=0",
   },
   {
-    id: 14, chain_name: "prismsettle_registry", event_type: "PRISM_VALIDATION_SUBMITTED",
+    id: 14, chain_name: "monad_testnet", event_type: "PRISM_VALIDATION_SUBMITTED",
     from: DEMO_ADDRESSES.alice, to: "2", value: score(0.82), symbol: "0",
     token_address: TX(0xee), tx_hash: TX(14), block_number: 1032011, block_time: hoursAgo(48),
     extra: "jobId=0",
   },
   {
-    id: 15, chain_name: "prismsettle_registry", event_type: "PRISM_VALIDATION_SUBMITTED",
+    id: 15, chain_name: "monad_testnet", event_type: "PRISM_VALIDATION_SUBMITTED",
     from: DEMO_ADDRESSES.dave, to: "3", value: score(0.78), symbol: "1",
     token_address: TX(0xff), tx_hash: TX(15), block_number: 1045010, block_time: hoursAgo(44),
     extra: "jobId=2",
   },
   {
-    id: 16, chain_name: "prismsettle_registry", event_type: "PRISM_VALIDATION_SUBMITTED",
+    id: 16, chain_name: "monad_testnet", event_type: "PRISM_VALIDATION_SUBMITTED",
     from: DEMO_ADDRESSES.bob, to: "3", value: score(0.75), symbol: "0",
     token_address: TX(0x11), tx_hash: TX(16), block_number: 1045011, block_time: hoursAgo(40),
     extra: "jobId=0",
   },
   {
-    id: 17, chain_name: "prismsettle_registry", event_type: "PRISM_VALIDATION_SUBMITTED",
+    id: 17, chain_name: "monad_testnet", event_type: "PRISM_VALIDATION_SUBMITTED",
     from: DEMO_ADDRESSES.alice, to: "4", value: score(0.88), symbol: "0",
     token_address: TX(0x22), tx_hash: TX(17), block_number: 1023010, block_time: hoursAgo(66),
     extra: "jobId=0",
   },
   {
-    id: 18, chain_name: "prismsettle_registry", event_type: "PRISM_VALIDATION_SUBMITTED",
+    id: 18, chain_name: "monad_testnet", event_type: "PRISM_VALIDATION_SUBMITTED",
     from: DEMO_ADDRESSES.dave, to: "5", value: score(0.65), symbol: "1",
     token_address: TX(0x33), tx_hash: TX(18), block_number: 1058010, block_time: hoursAgo(30),
     extra: "jobId=3",
   },
   {
-    id: 19, chain_name: "prismsettle_registry", event_type: "PRISM_VALIDATION_SUBMITTED",
+    id: 19, chain_name: "monad_testnet", event_type: "PRISM_VALIDATION_SUBMITTED",
     from: DEMO_ADDRESSES.carol, to: "5", value: score(0.55), symbol: "2",
     token_address: TX(0x44), tx_hash: TX(19), block_number: 1058011, block_time: hoursAgo(28),
     extra: "jobId=4",
   },
   {
-    id: 20, chain_name: "prismsettle_registry", event_type: "PRISM_VALIDATION_SUBMITTED",
+    id: 20, chain_name: "monad_testnet", event_type: "PRISM_VALIDATION_SUBMITTED",
     from: DEMO_ADDRESSES.bob, to: "6", value: score(0.55), symbol: "0",
     token_address: TX(0x55), tx_hash: TX(20), block_number: 1072010, block_time: hoursAgo(20),
     extra: "jobId=0",
   },
   {
-    id: 21, chain_name: "prismsettle_registry", event_type: "PRISM_VALIDATION_SUBMITTED",
+    id: 21, chain_name: "monad_testnet", event_type: "PRISM_VALIDATION_SUBMITTED",
     from: DEMO_ADDRESSES.dave, to: "7", value: score(0.32), symbol: "1",
     token_address: TX(0x66), tx_hash: TX(21), block_number: 1081010, block_time: hoursAgo(16),
     extra: "jobId=5",
@@ -310,13 +326,13 @@ export const MOCK_EVENTS: ChainEvent[] = [
 
   // --- PRISM_SLASHED (2) ---
   {
-    id: 30, chain_name: "prismsettle_registry", event_type: "PRISM_SLASHED",
+    id: 30, chain_name: "monad_testnet", event_type: "PRISM_SLASHED",
     from: DEMO_ADDRESSES.dave, to: DEMO_ADDRESSES.carol, value: score(2), symbol: "",
     token_address: TX(0x77), tx_hash: TX(30), block_number: 1081011, block_time: hoursAgo(15),
     extra: "evidence=missing_deadline",
   },
   {
-    id: 31, chain_name: "prismsettle_registry", event_type: "PRISM_SLASHED",
+    id: 31, chain_name: "monad_testnet", event_type: "PRISM_SLASHED",
     from: DEMO_ADDRESSES.dave, to: DEMO_ADDRESSES.dave, value: score(1.5), symbol: "",
     token_address: TX(0x88), tx_hash: TX(31), block_number: 1095001, block_time: hoursAgo(5),
     extra: "evidence=invalid_score",
@@ -324,21 +340,21 @@ export const MOCK_EVENTS: ChainEvent[] = [
 
   // --- PRISM_DISPUTED (3) ---
   {
-    id: 40, chain_name: "prismsettle_hook", event_type: "PRISM_DISPUTED",
+    id: 40, chain_name: "monad_testnet", event_type: "PRISM_DISPUTED",
     from: "", to: "4", value: "0", symbol: "",
     token_address: "0xabcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234abcd1234",
     tx_hash: TX(40), block_number: 1024040, block_time: hoursAgo(11),
     extra: "reason=deliverable_mismatch",
   },
   {
-    id: 41, chain_name: "prismsettle_hook", event_type: "PRISM_DISPUTED",
+    id: 41, chain_name: "monad_testnet", event_type: "PRISM_DISPUTED",
     from: "", to: "5", value: "0", symbol: "",
     token_address: "0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef",
     tx_hash: TX(41), block_number: 1081040, block_time: hoursAgo(14),
     extra: "reason=quality_below_threshold",
   },
   {
-    id: 42, chain_name: "prismsettle_hook", event_type: "PRISM_DISPUTED",
+    id: 42, chain_name: "monad_testnet", event_type: "PRISM_DISPUTED",
     from: "", to: "8", value: "0", symbol: "",
     token_address: "0xcafebabecafebabecafebabecafebabecafebabecafebabecafebabecafebabe",
     tx_hash: TX(42), block_number: 1095040, block_time: hoursAgo(58),
@@ -347,13 +363,13 @@ export const MOCK_EVENTS: ChainEvent[] = [
 
   // --- PRISM_DISPUTE_RESOLVED (2) ---
   {
-    id: 50, chain_name: "prismsettle_hook", event_type: "PRISM_DISPUTE_RESOLVED",
+    id: 50, chain_name: "monad_testnet", event_type: "PRISM_DISPUTE_RESOLVED",
     from: "", to: "5", value: "1", symbol: "",
     token_address: "", tx_hash: TX(50), block_number: 1081050, block_time: hoursAgo(40),
     extra: "ruling=refund_buyer",
   },
   {
-    id: 51, chain_name: "prismsettle_hook", event_type: "PRISM_DISPUTE_RESOLVED",
+    id: 51, chain_name: "monad_testnet", event_type: "PRISM_DISPUTE_RESOLVED",
     from: "", to: "8", value: "2", symbol: "",
     token_address: "", tx_hash: TX(51), block_number: 1095050, block_time: hoursAgo(58),
     extra: "ruling=pay_provider",
@@ -361,49 +377,49 @@ export const MOCK_EVENTS: ChainEvent[] = [
 
   // --- JOB lifecycle events (8) ---
   {
-    id: 60, chain_name: "prismsettle_job", event_type: "JOB_CREATED",
+    id: 60, chain_name: "monad_testnet", event_type: "JOB_CREATED",
     from: DEMO_ADDRESSES.alice, to: "1", value: "0", symbol: "",
     token_address: "", tx_hash: TX(60), block_number: 1024060, block_time: hoursAgo(20),
     extra: "agentId=1",
   },
   {
-    id: 61, chain_name: "prismsettle_job", event_type: "JOB_FUNDED",
+    id: 61, chain_name: "monad_testnet", event_type: "JOB_FUNDED",
     from: DEMO_ADDRESSES.alice, to: "1", value: score(0.5), symbol: "USDC",
     token_address: "", tx_hash: TX(61), block_number: 1024061, block_time: hoursAgo(19),
     extra: "amount=0.5_USDC",
   },
   {
-    id: 62, chain_name: "prismsettle_job", event_type: "JOB_SUBMITTED",
+    id: 62, chain_name: "monad_testnet", event_type: "JOB_SUBMITTED",
     from: DEMO_ADDRESSES.bob, to: "1", value: "0", symbol: "",
     token_address: TX(0xa1), tx_hash: TX(62), block_number: 1024062, block_time: hoursAgo(19),
     extra: "deliverableHash=0xa1...",
   },
   {
-    id: 63, chain_name: "prismsettle_job", event_type: "JOB_COMPLETED",
+    id: 63, chain_name: "monad_testnet", event_type: "JOB_COMPLETED",
     from: DEMO_ADDRESSES.dave, to: "1", value: score(0.92), symbol: "",
     token_address: "", tx_hash: TX(63), block_number: 1024063, block_time: hoursAgo(19),
     extra: "evalScore=0.92",
   },
   {
-    id: 64, chain_name: "prismsettle_job", event_type: "JOB_CREATED",
+    id: 64, chain_name: "monad_testnet", event_type: "JOB_CREATED",
     from: DEMO_ADDRESSES.carol, to: "2", value: "0", symbol: "",
     token_address: "", tx_hash: TX(64), block_number: 1045060, block_time: hoursAgo(8),
     extra: "agentId=3",
   },
   {
-    id: 65, chain_name: "prismsettle_job", event_type: "JOB_FUNDED",
+    id: 65, chain_name: "monad_testnet", event_type: "JOB_FUNDED",
     from: DEMO_ADDRESSES.carol, to: "2", value: score(0.3), symbol: "USDC",
     token_address: "", tx_hash: TX(65), block_number: 1045061, block_time: hoursAgo(7),
     extra: "amount=0.3_USDC",
   },
   {
-    id: 66, chain_name: "prismsettle_job", event_type: "JOB_SUBMITTED",
+    id: 66, chain_name: "monad_testnet", event_type: "JOB_SUBMITTED",
     from: DEMO_ADDRESSES.dave, to: "2", value: "0", symbol: "",
     token_address: TX(0xb2), tx_hash: TX(66), block_number: 1045062, block_time: hoursAgo(1),
     extra: "deliverableHash=0xb2...",
   },
   {
-    id: 67, chain_name: "prismsettle_job", event_type: "JOB_CREATED",
+    id: 67, chain_name: "monad_testnet", event_type: "JOB_CREATED",
     from: DEMO_ADDRESSES.alice, to: "6", value: "0", symbol: "",
     token_address: "", tx_hash: TX(67), block_number: 1095060, block_time: minutesAgo(15),
     extra: "agentId=1",

@@ -8,7 +8,7 @@ import { use } from "react";
 import { ArrowLeft, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
-import { PageHeader } from "@/components/PageHeader";
+
 import { ShardHeatmap } from "@/components/dashboard/ShardHeatmap";
 import { ScoreHistoryChart } from "@/components/agent/ScoreHistoryChart";
 import { AgentFailureCounterUI } from "@/components/agent/AgentFailureCounterUI";
@@ -52,7 +52,7 @@ function AgentDetailBody({ agentId }: { agentId: string }) {
 
   return (
     <div className="min-h-screen">
-      <PageHeader />
+      
       <main className="mx-auto max-w-7xl px-6 py-8">
         <Link
           href="/agents"

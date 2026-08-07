@@ -12,10 +12,11 @@
 import { use, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { ArrowLeft, Loader2, Gavel, FileUp, CheckCircle2, XCircle } from "lucide-react";
+import { ArrowLeft, Loader2, Gavel, FileUp, CheckCircle2, XCircle, Undo2 } from "lucide-react";
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract } from "wagmi";
 import { monadTestnet } from "wagmi/chains";
-import { PageHeader } from "@/components/PageHeader";
+import { keccak256, toHex } from "viem";
+
 import { JobStatusTracker } from "@/components/job/JobStatusTracker";
 import { FundFlowChart } from "@/components/job/FundFlowChart";
 import { FundingPathBadge } from "@/components/job/FundingPathBadge";
@@ -54,12 +55,13 @@ function JobDetailBody({ jobId }: { jobId: string }) {
   });
   const resolvedRuling = disputeEvents.length > 0 ? disputeEvents[0].value : null;
 
-  const canSubmit = status === "Funded" || status === "Assigned";
+  const canSubmit = status === "Funded" || status === "Assigned" || status === "Submitted"; // resubmission after reject
   const canDispute = status === "Submitted";
+  const canReject = status === "Submitted";
 
   return (
     <div className="min-h-screen">
-      <PageHeader />
+      
       <main className="mx-auto max-w-4xl px-6 py-8">
         <Link
           href="/"
@@ -90,8 +92,11 @@ function JobDetailBody({ jobId }: { jobId: string }) {
           <JobStatusTracker current={status ?? "Created"} timeline={timeline} />
         </section>
 
-        {/* Deliverable submission (8.5b, FR-JM03) */}
+        {/* Deliverable submission (8.5b, FR-JM03) — first submit or resubmit after reject */}
         {canSubmit && <DeliverableSubmit jobId={jobId} />}
+
+        {/* Buyer reject + rework request (reject → resubmit loop) */}
+        {canReject && <RejectPanel jobId={jobId} />}
 
         {/* Dispute (8.5c, FR-JM05/JM06) */}
         {(canDispute || status === "Disputed" || status === "DisputeResolved") && (
@@ -329,6 +334,126 @@ function DeliverableSubmit({ jobId }: { jobId: string }) {
   );
 }
 
+// ---------- Reject panel: Buyer requests rework (reject → resubmit loop) ----------
+function RejectPanel({ jobId }: { jobId: string }) {
+  const { address, chain } = useAccount();
+  const { writeContractAsync } = useWriteContract();
+
+  const [reason, setReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [txHash, setTxHash] = useState<`0x${string}` | null>(null);
+
+  const { isLoading: isConfirming } = useWaitForTransactionReceipt({
+    hash: txHash ?? undefined,
+  });
+
+  const ready = contractsReady() && JOB_CONTRACT_ADDRESS !== undefined;
+  const wrongChain = chain && chain.id !== monadTestnet.id;
+
+  async function handleReject(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    setTxHash(null);
+
+    if (!address) {
+      setError("Please connect your wallet first.");
+      return;
+    }
+    if (wrongChain) {
+      setError(`Wrong network. Please switch to Monad Testnet (chainId ${monadTestnet.id}).`);
+      return;
+    }
+    if (!JOB_CONTRACT_ADDRESS) {
+      setError("Job contract address not configured (NEXT_PUBLIC_JOB_CONTRACT_ADDRESS).");
+      return;
+    }
+    if (reason.trim().length < 10) {
+      setError("Please describe what needs to change (min 10 chars).");
+      return;
+    }
+
+    // The opinion is hashed on-chain as the reasonHash (Rejected event).
+    const reasonHash = keccak256(toHex(reason)) as `0x${string}`;
+
+    setSubmitting(true);
+    try {
+      const hash = await writeContractAsync({
+        address: JOB_CONTRACT_ADDRESS,
+        abi: JOB_ABI,
+        functionName: "reject",
+        args: [BigInt(jobId), reasonHash],
+        chainId: monadTestnet.id,
+      });
+      setTxHash(hash);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg.includes("UserRejected") ? "Transaction rejected by user." : msg);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  const done = Boolean(txHash) && !isConfirming;
+
+  return (
+    <section className="mt-6 rounded-xl border border-orange-500/30 bg-orange-500/5 p-5">
+      <h2 className="mb-3 flex items-center gap-2 text-sm font-medium text-orange-400">
+        <Undo2 className="h-4 w-4" />
+        Request Rework (reject)
+      </h2>
+      <p className="mb-3 text-[11px] text-white/40">
+        Buyer-only. Posts a <code className="text-white/60">reject deposit</code> (5% of escrow) which is
+        returned when the job settles without arbitration — or forfeited if the buyer loses a later dispute.
+        The provider can resubmit an improved deliverable, or open an arbitration if they disagree.
+      </p>
+      {!done && (
+        <form onSubmit={handleReject} className="space-y-3">
+          <div>
+            <label className="mb-1 block text-xs text-white/60">
+              Your opinion — what needs to change? (hashed into reasonHash)
+            </label>
+            <textarea
+              required
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={3}
+              placeholder="e.g. the report is missing the on-chain metrics table; please add section 2…"
+              className="w-full rounded-md border border-white/10 bg-prism-surface/60 px-3 py-1.5 text-sm text-white placeholder:text-white/30 focus:border-orange-500 focus:outline-none"
+            />
+          </div>
+          {error && <p className="text-xs text-red-400">{error}</p>}
+          {txHash && (
+            <p className="text-xs text-emerald-400">
+              Tx submitted: <code className="font-mono">{txHash.slice(0, 10)}…{txHash.slice(-8)}</code>
+              {isConfirming && " (confirming…)"}
+            </p>
+          )}
+          <button
+            type="submit"
+            disabled={submitting || !ready || !address}
+            className="inline-flex items-center gap-2 rounded-md bg-orange-500 px-4 py-2 text-sm font-semibold text-white hover:bg-orange-500/80 disabled:opacity-50"
+          >
+            {submitting ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" /> Rejecting…
+              </>
+            ) : (
+              <>
+                <XCircle className="h-4 w-4" /> Reject Deliverable
+              </>
+            )}
+          </button>
+          <p className="text-[11px] text-white/40">
+            Calls <code className="text-white/60">Job.reject(jobId, reasonHash)</code> — requires the buyer to
+            have approved the Job contract for USDC (reject deposit).
+          </p>
+        </form>
+      )}
+    </section>
+  );
+}
+
 // ---------- 8.5c: Dispute + ruling (FR-JM05/JM06) — real on-chain call ----------
 function DisputePanel({ jobId, status, resolvedRuling }: { jobId: string; status: string; resolvedRuling: string | null }) {
   const { address, chain } = useAccount();
@@ -398,6 +523,11 @@ function DisputePanel({ jobId, status, resolvedRuling }: { jobId: string; status
         <Gavel className="h-4 w-4" />
         Arbitration (FR-JM05 / FR-JM06)
       </h2>
+      <p className="mb-3 text-[11px] text-white/40">
+        Either party (buyer or provider) may open a dispute within 24h of the latest submit. Both sides post a{" "}
+        <code className="text-white/60">dispute deposit</code> (5% of escrow); the losing side's deposit pays the
+        arbitrator, the winner's is returned, and the escrow goes 100% to the winner.
+      </p>
 
       {!isDisputed && !isResolved && (
         <form onSubmit={handleDispute} className="space-y-3">

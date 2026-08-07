@@ -2,78 +2,49 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ─── Design Tokens (ui-ux-pro-max: Fintech/Crypto palette) ─── */
-/* HSL values for shadcn/ui CSS variable system. Dark mode is the default
-   for PrismSettle (Web3 trust layer dashboard). */
+/* ─── Design Tokens (AgentOn-inspired dark theme) ─── */
+/* Near-black background, subtle borders, prism accent for highlights. */
 
 :root {
-  /* Dark mode (default) */
-  --background: 222 47% 11%;          /* #0F172A */
-  --foreground: 210 40% 98%;          /* #F8FAFC */
-  --card: 222 47% 13%;                /* slightly lighter than bg */
-  --card-foreground: 210 40% 98%;
-  --popover: 222 47% 13%;
-  --popover-foreground: 210 40% 98%;
+  --background: 240 10% 4%;           /* #0a0a0f */
+  --foreground: 0 0% 92%;             /* #ebebeb */
+  --card: 240 6% 10%;                 /* #18181b */
+  --card-foreground: 0 0% 92%;
+  --popover: 240 6% 10%;
+  --popover-foreground: 0 0% 92%;
 
-  --primary: 38 92% 50%;              /* #F59E0B — gold trust */
-  --primary-foreground: 222 47% 11%;
-  --secondary: 45 96% 61%;            /* #FBBF24 */
-  --secondary-foreground: 222 47% 11%;
+  --primary: 258 90% 66%;             /* #8B5CF6 — prism accent */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 240 4% 16%;
+  --secondary-foreground: 0 0% 92%;
 
-  --muted: 217 33% 17%;               /* #1E293B */
-  --muted-foreground: 215 20% 65%;    /* #94A3B8 */
+  --muted: 240 4% 12%;
+  --muted-foreground: 240 5% 45%;
 
-  --accent: 258 90% 66%;              /* #8B5CF6 — purple CTA */
-  --accent-foreground: 210 40% 98%;
+  --accent: 258 90% 66%;
+  --accent-foreground: 0 0% 100%;
 
-  --destructive: 0 84% 60%;           /* #EF4444 */
-  --destructive-foreground: 210 40% 98%;
+  --destructive: 0 73% 51%;
+  --destructive-foreground: 0 0% 100%;
 
-  --border: 215 25% 27%;              /* #334155 */
-  --input: 215 25% 27%;
-  --ring: 38 92% 50%;                 /* focus ring = gold */
+  --border: 240 4% 16%;
+  --input: 240 4% 16%;
+  --ring: 258 90% 66%;
 
   --radius: 0.75rem;
 
-  /* PrismSettle brand tokens (legacy compatibility) */
   --trust: #f59e0b;
-}
-
-/* Light mode (for accessibility — not default but available via next-themes) */
-.light {
-  --background: 210 40% 98%;          /* #F8FAFC */
-  --foreground: 222 47% 11%;          /* #0F172A */
-  --card: 0 0% 100%;
-  --card-foreground: 222 47% 11%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 222 47% 11%;
-
-  --primary: 38 92% 50%;
-  --primary-foreground: 210 40% 98%;
-  --secondary: 45 96% 61%;
-  --secondary-foreground: 222 47% 11%;
-
-  --muted: 210 40% 96%;
-  --muted-foreground: 215 16% 47%;
-
-  --accent: 258 90% 66%;
-  --accent-foreground: 210 40% 98%;
-
-  --destructive: 0 84% 60%;
-  --destructive-foreground: 210 40% 98%;
-
-  --border: 214 32% 91%;
-  --input: 214 32% 91%;
-  --ring: 38 92% 50%;
 }
 
 /* ─── Base Styles ─── */
 
 body {
   color: hsl(var(--foreground));
-  background: hsl(var(--background));
+  background: #0a0a0f;
   font-family: var(--font-exo2), -apple-system, BlinkMacSystemFont, "Segoe UI",
     Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 h1, h2, h3 {
@@ -81,51 +52,39 @@ h1, h2, h3 {
     "Segoe UI", Roboto, sans-serif;
 }
 
-/* Smooth scroll for anchor navigation */
 html {
   scroll-behavior: smooth;
 }
 
-/* ─── PrismSettle Brand Effects ─── */
-
+/* ─── Subtle background gradient (like AgentOn) ─── */
 .prism-bg {
-  background: radial-gradient(
-      ellipse at top,
-      rgba(124, 58, 237, 0.15),
-      transparent 60%
-    ),
+  background:
     radial-gradient(
-      ellipse at bottom,
-      rgba(34, 211, 238, 0.1),
-      transparent 60%
+      ellipse 80% 50% at 50% -20%,
+      rgba(124, 58, 237, 0.08),
+      transparent
     ),
-    hsl(var(--background));
+    #0a0a0f;
 }
 
+/* ─── Card glow ─── */
 .card-glow {
-  background: linear-gradient(
-    135deg,
-    rgba(124, 58, 237, 0.04),
-    rgba(236, 72, 153, 0.04)
-  );
-  border: 1px solid rgba(124, 58, 237, 0.15);
-  box-shadow: 0 0 20px rgba(124, 58, 237, 0.06);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  transition: border-color 0.2s ease, background 0.2s ease;
 }
 .card-glow:hover {
-  border-color: rgba(124, 58, 237, 0.35);
-  box-shadow: 0 0 30px rgba(124, 58, 237, 0.15);
+  border-color: rgba(124, 58, 237, 0.25);
+  background: rgba(124, 58, 237, 0.04);
 }
 
 /* ─── Accessibility ─── */
 
-/* Visible focus rings for keyboard navigation (WCAG AAA) */
 :focus-visible {
-  outline: 3px solid hsl(var(--ring));
+  outline: 2px solid hsl(var(--ring));
   outline-offset: 2px;
 }
 
-/* Skip link — visible only on focus */
 .skip-link {
   position: absolute;
   top: -100px;
@@ -141,7 +100,7 @@ html {
   top: 0;
 }
 
-/* ─── Reduced Motion (mandatory WCAG) ─── */
+/* ─── Reduced Motion ─── */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
@@ -149,4 +108,10 @@ html {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* ─── Selection ─── */
+::selection {
+  background: rgba(124, 58, 237, 0.3);
+  color: #fff;
 }

@@ -7,7 +7,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Search, ArrowDownWideNarrow, UserPlus } from "lucide-react";
-import { PageHeader } from "@/components/PageHeader";
+
 import { AgentRegisterForm } from "@/components/agent/AgentRegisterForm";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -68,7 +68,7 @@ export default function AgentMarketplacePage() {
 
   return (
     <div className="min-h-screen">
-      <PageHeader />
+      
       <main id="main" className="mx-auto max-w-7xl px-6 py-8">
         <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
           <div>

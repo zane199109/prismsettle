@@ -21,7 +21,7 @@
 
 import { Activity, Users, Zap } from "lucide-react";
 import { Providers } from "../providers";
-import { PageHeader } from "@/components/PageHeader";
+
 import { PrismHologram } from "@/components/dashboard/PrismHologram";
 import { ShardHeatmap } from "@/components/dashboard/ShardHeatmap";
 import { ValidationFeed } from "@/components/dashboard/ValidationFeed";
@@ -44,7 +44,7 @@ function DashboardBody() {
 
   return (
     <>
-      <PageHeader />
+      
       <main id="main" className="mx-auto max-w-7xl px-6 py-8">
         <div className="mb-6 flex flex-wrap items-center gap-3">
           <div>

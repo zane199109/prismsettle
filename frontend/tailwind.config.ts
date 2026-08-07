@@ -47,9 +47,9 @@ const config: Config = {
         },
         // PrismSettle brand palette (legacy compat — keep for existing components).
         prism: {
-          bg: "#0a0e1a",
-          surface: "#111827",
-          accent: "#7c3aed",
+          bg: "#0a0a0f",
+          surface: "#18181b",
+          accent: "#8B5CF6",
           glow: "#22d3ee",
           success: "#10b981",
           warn: "#f59e0b",

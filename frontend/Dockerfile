@@ -27,6 +27,12 @@ WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 
+# Remove the dangling .env symlink (frontend/.env -> ../.env exists for
+# local dev only; inside the image it breaks Next.js env loading with
+# ENOENT during `next build`). NEXT_PUBLIC_* values come from .env.local
+# (build) and docker-compose environment (runtime).
+RUN rm -f .env
+
 # Disable telemetry during build.
 ENV NEXT_TELEMETRY_DISABLED=1
 

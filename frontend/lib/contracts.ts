@@ -24,7 +24,7 @@ export const MONAD_TESTNET_RPC = process.env.NEXT_PUBLIC_RPC_URL ?? "https://tes
 // Backend chain name — must match web3.chains[].chain_name in prod.yaml.
 // Used by the /agent/invoke proxy (FR-M11) to resolve the agent's endpoint
 // from agent_registry. Defaults to the PrismSettleRegistry listener name.
-export const CHAIN_NAME = process.env.NEXT_PUBLIC_CHAIN_NAME ?? "prismsettle_registry";
+export const CHAIN_NAME = process.env.NEXT_PUBLIC_CHAIN_NAME ?? "monad_testnet";
 
 // Guard: if addresses are missing, components should disable write actions
 // and show a "contracts not deployed" hint instead of sending to address(0).

@@ -85,7 +85,7 @@ export function ValidatorLeaderboard({ limit = 10 }: { limit?: number }) {
                     </a>
                   </TableCell>
                   <TableCell className="font-mono text-sm font-semibold text-emerald-400">
-                    {v.totalStaked} ETH
+                    {v.totalStaked} MON
                   </TableCell>
                   <TableCell className="font-mono text-xs text-white/70">
                     {v.stakeCount}

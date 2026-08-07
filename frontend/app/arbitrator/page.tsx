@@ -11,14 +11,16 @@
 // Field mapping (offchain/prismsettle/parser/prismsettle_hook_parser.go):
 //   - Disputed:        event.to = jobId, event.token_address = reasonHash
 //   - DisputeResolved: event.to = jobId, event.value = ruling
+//   - JobSubmitted:    event.to = jobId, event.token_address = deliverableHash
 
 import { Suspense, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Gavel, ArrowLeft, Loader2, ArrowRight } from "lucide-react";
+import { ArrowLeft, Loader2, ArrowRight, Gavel, Brain, FileText, MessageSquare, Scale } from "lucide-react";
 import { useAccount, useWriteContract, useWaitForTransactionReceipt } from "wagmi";
 import { monadTestnet } from "wagmi/chains";
-import { PageHeader } from "@/components/PageHeader";
+
+import { EvalAgentAnalysisPanel } from "@/components/dispute/EvalAgentAnalysisPanel";
 import { useEvents } from "@/hooks/useEvents";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -27,6 +29,23 @@ import { HOOK_CONTRACT_ADDRESS, HOOK_ABI, contractsReady } from "@/lib/contracts
 import { cn, formatTime } from "@/lib/utils";
 
 type Ruling = 1 | 2;
+
+// ---------------------------------------------------------------------------
+// Demo evidence content — for the hackathon, we simulate the dispute reason
+// and deliverable content since the actual on-chain data is hashed.
+// In production, this would be resolved via IPFS or the offchain API.
+// ---------------------------------------------------------------------------
+
+const DEMO_DISPUTE_REASON =
+  "The translation quality is below acceptable standards. Multiple sentences have grammatical errors, "
+  + "technical terms are incorrectly translated, and the overall formatting is inconsistent with the "
+  + "requirements. The deliverable does not meet the quality bar specified in the job description.";
+
+const DEMO_DELIVERABLE_CONTENT =
+  "Full translation of the technical whitepaper (12 pages) from English to Chinese. "
+  + "All sections have been translated including the abstract, methodology, implementation details, "
+  + "and conclusion. The translation maintains technical accuracy with proper terminology. "
+  + "Formatting follows the original document structure with consistent styling.";
 
 export default function ArbitratorPage() {
   return (
@@ -66,7 +85,7 @@ function PendingDisputesList() {
 
   return (
     <div className="min-h-screen">
-      <PageHeader />
+      
       <main className="mx-auto max-w-7xl px-6 py-8">
         <div className="mb-6">
           <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight">
@@ -150,8 +169,27 @@ function ResolvePanel({ jobId }: { jobId: string }) {
     size: 100,
     intervalMs: 15000,
   });
+  // Fetch JOB_SUBMITTED events to find the provider's deliverable reference.
+  const { events: submitted } = useEvents({
+    eventType: "JOB_SUBMITTED",
+    size: 100,
+    intervalMs: 15000,
+  });
+
   const dispute = disputed.find((d) => d.to === jobId);
   const alreadyResolved = resolved.find((r) => r.to === jobId);
+  const submitEvent = submitted.find((s) => s.to === jobId);
+
+  // Derived evidence from chain events (with demo fallback for the hackathon).
+  const disputeReason = dispute?.token_address
+    ? `Dispute reason hash: ${dispute.token_address.slice(0, 12)}…${dispute.token_address.slice(-6)}. `
+      + DEMO_DISPUTE_REASON
+    : DEMO_DISPUTE_REASON;
+
+  const deliverableContent = submitEvent?.token_address
+    ? `Deliverable hash: ${submitEvent.token_address.slice(0, 12)}…${submitEvent.token_address.slice(-6)}. `
+      + DEMO_DELIVERABLE_CONTENT
+    : DEMO_DELIVERABLE_CONTENT;
 
   const ready = contractsReady() && HOOK_CONTRACT_ADDRESS !== undefined;
   const wrongChain = chain && chain.id !== monadTestnet.id;
@@ -180,8 +218,6 @@ function ResolvePanel({ jobId }: { jobId: string }) {
     }
 
     try {
-      // parseBigInt: jobId is decimal string from event.to (hex agentIdFromTopic).
-      // Hook.resolveDispute expects uint256 — pass as BigInt.
       const jobIdBig = parseJobId(jobId);
       if (jobIdBig === null) return;
       const hash = await writeContractAsync({
@@ -209,7 +245,7 @@ function ResolvePanel({ jobId }: { jobId: string }) {
 
   return (
     <div className="min-h-screen">
-      <PageHeader />
+      
       <main className="mx-auto max-w-3xl px-6 py-8">
         <Link
           href="/arbitrator"
@@ -224,12 +260,69 @@ function ResolvePanel({ jobId }: { jobId: string }) {
             Resolve Job #{jobId}
           </h1>
           <p className="mt-1 text-sm text-white/60">
-            Render an arbitration ruling. This action triggers `submitValidation` with source=2.
+            Review the evidence from both parties, then render an arbitration ruling.
           </p>
         </div>
 
-        {/* Dispute context */}
+        {/* ---- Evidence: both parties' submissions ---- */}
         <Card className="border-white/10 bg-prism-surface/40">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Scale className="h-4 w-4 text-prism-accent" />
+              Evidence
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-4 sm:grid-cols-2">
+            {/* Buyer's claim */}
+            <div className="rounded-lg border border-amber-400/20 bg-amber-400/5 p-4">
+              <div className="mb-2 flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-medium text-amber-300">
+                  <MessageSquare className="h-3.5 w-3.5" />
+                  Buyer&apos;s Claim
+                </div>
+                {dispute && (
+                  <span className="font-mono text-[10px] text-white/30">
+                    {formatTime(dispute.block_time)}
+                  </span>
+                )}
+              </div>
+              <p className="font-mono text-[11px] leading-relaxed text-white/70">
+                {disputeReason}
+              </p>
+              {dispute?.token_address && (
+                <div className="mt-2 border-t border-amber-400/10 pt-2 text-[10px] text-white/40">
+                  on-chain: <span className="font-mono">{dispute.token_address.slice(0, 12)}…{dispute.token_address.slice(-6)}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Provider's deliverable */}
+            <div className="rounded-lg border border-sky-400/20 bg-sky-400/5 p-4">
+              <div className="mb-2 flex items-center justify-between">
+                <div className="flex items-center gap-1.5 text-xs font-medium text-sky-300">
+                  <FileText className="h-3.5 w-3.5" />
+                  Provider&apos;s Deliverable
+                </div>
+                {submitEvent && (
+                  <span className="font-mono text-[10px] text-white/30">
+                    {formatTime(submitEvent.block_time)}
+                  </span>
+                )}
+              </div>
+              <p className="font-mono text-[11px] leading-relaxed text-white/70">
+                {deliverableContent}
+              </p>
+              {submitEvent?.token_address && (
+                <div className="mt-2 border-t border-sky-400/10 pt-2 text-[10px] text-white/40">
+                  on-chain: <span className="font-mono">{submitEvent.token_address.slice(0, 12)}…{submitEvent.token_address.slice(-6)}</span>
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Dispute context */}
+        <Card className="mt-4 border-white/10 bg-prism-surface/40">
           <CardHeader className="pb-3">
             <CardTitle className="text-base">Dispute Context</CardTitle>
           </CardHeader>
@@ -258,6 +351,25 @@ function ResolvePanel({ jobId }: { jobId: string }) {
           </CardContent>
         </Card>
 
+        {/* Eval Agent Analysis — hackathon demo visualization */}
+        <div className="mt-6">
+          <div className="mb-3 flex items-center gap-2 text-sm text-white/60">
+            <Brain className="h-4 w-4 text-prism-accent" />
+            <span>Eval Agent Analysis <span className="rounded bg-prism-accent/15 px-1.5 py-0.5 font-mono text-[10px] text-prism-accent">Demo</span></span>
+          </div>
+          <EvalAgentAnalysisPanel
+            jobId={jobId}
+            buyer={dispute?.from ?? "0xBuyer...Demo"}
+            provider="0xProvider...Demo"
+            amount="100000000000000000000" // 100 MON
+            evaluatorFeeBps={500} // 5%
+            evaluatorFeeRecipient="0xEval...Recipient"
+            disputeReason={disputeReason}
+            deliverableContent={deliverableContent}
+            autoAnalyze
+          />
+        </div>
+
         {/* Ruling form */}
         <Card className="mt-6 border-white/10 bg-prism-surface/40">
           <CardHeader className="pb-3">
@@ -271,7 +383,7 @@ function ResolvePanel({ jobId }: { jobId: string }) {
                   selected={ruling === 1}
                   onClick={() => setRuling(1)}
                   title="Refund Buyer"
-                  description="ruling=1. Buyer gets refund. Agent slashed with max(0.2e18, score×30%)."
+                  description="ruling=1. Buyer gets refund minus evaluator fee. Agent slashed with max(0.2e18, score×30%)."
                   accent="amber"
                 />
                 <RulingOption
@@ -279,7 +391,7 @@ function ResolvePanel({ jobId }: { jobId: string }) {
                   selected={ruling === 2}
                   onClick={() => setRuling(2)}
                   title="Pay Provider"
-                  description="ruling=2. Provider receives locked funds. Evaluator score written via submitValidation source=2."
+                  description="ruling=2. Provider receives locked funds minus evaluator fee. Evaluator score written via submitValidation source=2."
                   accent="emerald"
                 />
               </div>

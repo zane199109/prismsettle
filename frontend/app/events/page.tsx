@@ -8,7 +8,7 @@
 
 import { useState } from "react";
 import { Filter, ChevronLeft, ChevronRight, ExternalLink } from "lucide-react";
-import { PageHeader } from "@/components/PageHeader";
+
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -77,7 +77,7 @@ export default function EventsPage() {
 
   return (
     <div className="min-h-screen">
-      <PageHeader />
+      
       <main id="main" className="mx-auto max-w-7xl px-6 py-8">
         <div className="mb-6">
           <h1 className="text-2xl font-bold tracking-tight">Chain Events</h1>

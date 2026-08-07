@@ -20,6 +20,8 @@ export interface JobVO {
   evaluator: string;
   created_at: number;
   updated_at: number;
+  amount?: string; // Escrow amount (token value string)
+  provider?: string; // Provider address (assigned via grabJob)
 }
 
 // FR-AP06~AP09: x402 / ERC-20 dual funding path.

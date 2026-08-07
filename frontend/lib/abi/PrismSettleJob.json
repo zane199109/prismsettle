@@ -17,6 +17,19 @@
   },
   {
     "type": "function",
+    "name": "ANNOUNCEMENT_PERIOD",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "COMMERCE_EVALUATOR_ROLE",
     "inputs": [],
     "outputs": [
@@ -40,24 +53,6 @@
       }
     ],
     "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "assign",
-    "inputs": [
-      {
-        "name": "jobId",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "provider",
-        "type": "address",
-        "internalType": "address"
-      }
-    ],
-    "outputs": [],
-    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -99,6 +94,11 @@
         "name": "jobId",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "score",
+        "type": "uint96",
+        "internalType": "uint96"
       }
     ],
     "outputs": [],
@@ -127,6 +127,11 @@
         "name": "hook",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "minProviderReputation",
+        "type": "uint96",
+        "internalType": "uint96"
       }
     ],
     "outputs": [
@@ -136,6 +141,19 @@
         "internalType": "uint256"
       }
     ],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "executeArbitrationResult",
+    "inputs": [
+      {
+        "name": "jobId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
     "stateMutability": "nonpayable"
   },
   {
@@ -176,7 +194,45 @@
   },
   {
     "type": "function",
+    "name": "getJobAmount",
+    "inputs": [
+      {
+        "name": "jobId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "getJobBuyer",
+    "inputs": [
+      {
+        "name": "jobId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getJobProvider",
     "inputs": [
       {
         "name": "jobId",
@@ -243,6 +299,35 @@
         "name": "hook",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "minProviderReputation",
+        "type": "uint96",
+        "internalType": "uint96"
+      },
+      {
+        "name": "disputeResolvedAt",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getJobSubmittedAt",
+    "inputs": [
+      {
+        "name": "jobId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -265,6 +350,24 @@
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "grabJob",
+    "inputs": [
+      {
+        "name": "jobId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "providerAgentId",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -310,6 +413,24 @@
   },
   {
     "type": "function",
+    "name": "notifyDisputeResolved",
+    "inputs": [
+      {
+        "name": "jobId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "ruling",
+        "type": "uint8",
+        "internalType": "uint8"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "paymentToken",
     "inputs": [],
     "outputs": [
@@ -320,6 +441,37 @@
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "registry",
+    "inputs": [],
+    "outputs": [
+      {
+        "name": "",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "reject",
+    "inputs": [
+      {
+        "name": "jobId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "reasonHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -359,6 +511,19 @@
   },
   {
     "type": "function",
+    "name": "setRegistry",
+    "inputs": [
+      {
+        "name": "registryAddr",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
     "name": "shardJobs",
     "inputs": [
       {
@@ -382,6 +547,11 @@
         "name": "provider",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "providerAgentId",
+        "type": "uint256",
+        "internalType": "uint256"
       },
       {
         "name": "amount",
@@ -422,6 +592,21 @@
         "name": "createdAt",
         "type": "uint64",
         "internalType": "uint64"
+      },
+      {
+        "name": "minProviderReputation",
+        "type": "uint96",
+        "internalType": "uint96"
+      },
+      {
+        "name": "disputeResolvedAt",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "submittedAt",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "stateMutability": "view"
@@ -489,6 +674,31 @@
   },
   {
     "type": "event",
+    "name": "ArbitrationExecuted",
+    "inputs": [
+      {
+        "name": "jobId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "ruling",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "uint8"
+      },
+      {
+        "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "Assigned",
     "inputs": [
       {
@@ -524,6 +734,37 @@
       },
       {
         "name": "amount",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "DisputeResolvedAnnounced",
+    "inputs": [
+      {
+        "name": "jobId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "ruling",
+        "type": "uint8",
+        "indexed": false,
+        "internalType": "uint8"
+      },
+      {
+        "name": "resolvedAt",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "releaseAt",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -589,6 +830,12 @@
         "type": "address",
         "indexed": false,
         "internalType": "address"
+      },
+      {
+        "name": "minProviderReputation",
+        "type": "uint96",
+        "indexed": false,
+        "internalType": "uint96"
       }
     ],
     "anonymous": false
@@ -614,6 +861,31 @@
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "Rejected",
+    "inputs": [
+      {
+        "name": "jobId",
+        "type": "uint256",
+        "indexed": true,
+        "internalType": "uint256"
+      },
+      {
+        "name": "buyer",
+        "type": "address",
+        "indexed": false,
+        "internalType": "address"
+      },
+      {
+        "name": "reasonHash",
+        "type": "bytes32",
+        "indexed": false,
+        "internalType": "bytes32"
       }
     ],
     "anonymous": false

@@ -3,7 +3,7 @@
 // Performance comparison page — V0V1Comparison + ReorgAwareFeed + ShardHeatmap.
 // DEV-PLAN §Phase 8 任务 8.7.
 
-import { PageHeader } from "@/components/PageHeader";
+
 import { V0V1Comparison } from "@/components/perf/V0V1Comparison";
 import { ReorgAwareFeed } from "@/components/prism/ReorgAwareFeed";
 import { ShardHeatmap } from "@/components/dashboard/ShardHeatmap";
@@ -11,7 +11,7 @@ import { ShardHeatmap } from "@/components/dashboard/ShardHeatmap";
 export default function PerfPage() {
   return (
     <div className="min-h-screen">
-      <PageHeader />
+      
       <main className="mx-auto max-w-7xl px-6 py-8">
         <h1 className="text-2xl font-bold tracking-tight">Performance</h1>
         <p className="mt-1 text-sm text-white/60">

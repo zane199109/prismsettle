@@ -8,7 +8,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Plus, Search, ChevronLeft, ChevronRight, Filter } from "lucide-react";
-import { PageHeader } from "@/components/PageHeader";
+
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -80,7 +80,7 @@ export default function JobsListPage() {
 
   return (
     <div className="min-h-screen">
-      <PageHeader />
+      
       <main id="main" className="mx-auto max-w-7xl px-6 py-8">
         <div className="mb-6 flex flex-wrap items-end justify-between gap-3">
           <div>
@@ -132,8 +132,9 @@ export default function JobsListPage() {
                   <TableHead className="pl-6">Job ID</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Shard</TableHead>
+                  <TableHead>Amount</TableHead>
                   <TableHead>Creator</TableHead>
-                  <TableHead>Evaluator</TableHead>
+                  <TableHead>Provider</TableHead>
                   <TableHead>Created</TableHead>
                   <TableHead className="pr-6 text-right">Action</TableHead>
                 </TableRow>
@@ -145,15 +146,15 @@ export default function JobsListPage() {
                       <TableCell className="pl-6"><Skeleton className="h-4 w-24" /></TableCell>
                       <TableCell><Skeleton className="h-5 w-20 rounded-full" /></TableCell>
                       <TableCell><Skeleton className="h-4 w-8" /></TableCell>
+                      <TableCell><Skeleton className="h-4 w-16" /></TableCell>
                       <TableCell><Skeleton className="h-4 w-20" /></TableCell>
                       <TableCell><Skeleton className="h-4 w-20" /></TableCell>
                       <TableCell><Skeleton className="h-4 w-16" /></TableCell>
                       <TableCell className="pr-6"><Skeleton className="h-4 w-12 ml-auto" /></TableCell>
-                    </TableRow>
-                  ))
+                    </TableRow>))
                 ) : filtered.length === 0 ? (
                   <TableRow className="border-white/10 hover:bg-transparent">
-                    <TableCell colSpan={7} className="py-16 text-center text-sm text-white/40">
+                    <TableCell colSpan={8} className="py-16 text-center text-sm text-white/40">
                       No jobs match the current filter.
                       <div className="mt-3">
                         <Button asChild variant="outline" size="sm">
@@ -181,10 +182,13 @@ export default function JobsListPage() {
                         #{job.shard_id}
                       </TableCell>
                       <TableCell className="font-mono text-xs text-white/70">
+                        {job.amount ? `${(Number(job.amount) / 1e6).toFixed(2)} USDC` : "—"}
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-white/70">
                         {formatAgentId(job.creator)}
                       </TableCell>
                       <TableCell className="font-mono text-xs text-white/70">
-                        {job.evaluator ? formatAgentId(job.evaluator) : "—"}
+                        {job.provider ? formatAgentId(job.provider) : "—"}
                       </TableCell>
                       <TableCell className="text-xs text-white/50">
                         {formatTime(job.created_at)}
@@ -200,8 +204,7 @@ export default function JobsListPage() {
                           <Link href={`/jobs/${encodeURIComponent(job.job_id)}`}>View</Link>
                         </Button>
                       </TableCell>
-                    </TableRow>
-                  ))
+                    </TableRow>))
                 )}
               </TableBody>
             </Table>

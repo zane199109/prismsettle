@@ -19,7 +19,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { User, Wallet, ArrowRight, ExternalLink, Sparkles } from "lucide-react";
 import { useAccount } from "wagmi";
-import { PageHeader } from "@/components/PageHeader";
+
 import { useAgents } from "@/hooks/useAgents";
 import { useJobs } from "@/hooks/useJobs";
 import { useEvents } from "@/hooks/useEvents";
@@ -47,7 +47,7 @@ export default function MyProfilePage() {
 
   return (
     <div className="min-h-screen">
-      <PageHeader />
+      
       <main className="mx-auto max-w-7xl px-6 py-8">
         <div className="mb-6">
           <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight">
@@ -210,8 +210,11 @@ function ProfileContent({
                 <li key={j.job_id} className="flex items-center justify-between gap-3 rounded-md border border-white/5 bg-black/20 px-3 py-2">
                   <div className="min-w-0">
                     <div className="font-mono text-xs text-white">Job #{j.job_id}</div>
-                    <div className="mt-0.5 text-[10px] text-white/40">
-                      created {formatTime(j.created_at)} · shard #{j.shard_id}
+                    <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-white/40">
+                      <span>created {formatTime(j.created_at)}</span>
+                      <span>shard #{j.shard_id}</span>
+                      {j.amount && <span>{(Number(j.amount) / 1e6).toFixed(2)} USDC</span>}
+                      {j.provider && <span>→ provider {formatAgentId(j.provider)}</span>}
                     </div>
                   </div>
                   <div className="flex items-center gap-2">

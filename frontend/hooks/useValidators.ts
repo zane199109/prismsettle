@@ -17,7 +17,7 @@ import { formatEther } from "viem";
 
 export interface ValidatorRow {
   address: string;
-  totalStaked: string; // decimal ETH string (human-readable)
+  totalStaked: string; // decimal MON string (human-readable)
   totalStakedWei: bigint;
   stakeCount: number;
   lastActiveAt: number;

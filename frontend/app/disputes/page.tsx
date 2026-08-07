@@ -9,7 +9,7 @@
 
 import Link from "next/link";
 import { Gavel, ArrowRight } from "lucide-react";
-import { PageHeader } from "@/components/PageHeader";
+
 import { useEvents } from "@/hooks/useEvents";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -45,7 +45,7 @@ export default function DisputesPage() {
 
   return (
     <div className="min-h-screen">
-      <PageHeader />
+      
       <main className="mx-auto max-w-7xl px-6 py-8">
         <div className="mb-6">
           <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight">

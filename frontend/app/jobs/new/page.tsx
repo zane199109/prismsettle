@@ -15,7 +15,7 @@ import { ArrowRight, Loader2 } from "lucide-react";
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract } from "wagmi";
 import { monadTestnet } from "wagmi/chains";
 import { decodeEventLog, parseAbiItem } from "viem";
-import { PageHeader } from "@/components/PageHeader";
+
 import { TrustGate } from "@/components/job/TrustGate";
 import { FundingPathBadge } from "@/components/job/FundingPathBadge";
 import type { TrustCheckResult } from "@/lib/types";
@@ -30,9 +30,10 @@ import {
 
 const RPC_URL = process.env.NEXT_PUBLIC_RPC_URL;
 
-// JobCreated event signature for log parsing.
+// JobCreated event signature for log parsing. Must match the full on-chain
+// event including the minProviderReputation field.
 const JOB_CREATED_EVENT = parseAbiItem(
-  "event JobCreated(uint256 indexed agentId, uint256 indexed jobId, address buyer, uint64 deadline, address hook)"
+  "event JobCreated(uint256 indexed agentId, uint256 indexed jobId, address buyer, uint64 deadline, address hook, uint96 minProviderReputation)"
 );
 
 function NewJobBody() {
@@ -46,6 +47,7 @@ function NewJobBody() {
   const [agentId, setAgentId] = useState(initialAgent);
   const [deadline, setDeadline] = useState("");
   const [amount, setAmount] = useState("");
+  const [minProviderReputation, setMinProviderReputation] = useState("");
   const [decision, setDecision] = useState<TrustCheckResult["decision"] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [stepLabel, setStepLabel] = useState<string | null>(null);
@@ -94,6 +96,7 @@ function NewJobBody() {
       setError("Deadline must be in the future.");
       return;
     }
+    const minRepBig = minProviderReputation ? BigInt(minProviderReputation) : 0n;
 
     try {
       // Step 1: createJob
@@ -102,7 +105,7 @@ function NewJobBody() {
         address: JOB_CONTRACT_ADDRESS,
         abi: JOB_ABI,
         functionName: "createJob",
-        args: [agentIdBig, 0n, deadlineBig, HOOK_CONTRACT_ADDRESS ?? "0x0000000000000000000000000000000000000000"],
+        args: [agentIdBig, 0n, deadlineBig, HOOK_CONTRACT_ADDRESS ?? "0x0000000000000000000000000000000000000000", minRepBig],
         chainId: monadTestnet.id,
       });
       setTxHash(createHash);
@@ -180,7 +183,7 @@ function NewJobBody() {
 
   return (
     <div className="min-h-screen">
-      <PageHeader />
+      
       <main className="mx-auto max-w-3xl px-6 py-8">
         <h1 className="text-2xl font-bold tracking-tight">Create New Job</h1>
         <p className="mt-1 text-sm text-white/60">
@@ -240,6 +243,23 @@ function NewJobBody() {
               placeholder={String(Math.floor(Date.now() / 1000) + 3600)}
               className="w-full rounded-lg border border-white/10 bg-prism-surface/60 px-3 py-2 font-mono text-sm text-white placeholder:text-white/30 focus:border-prism-accent focus:outline-none"
             />
+          </div>
+
+          {/* Min Provider Reputation */}
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-white/80">
+              Min Provider Reputation <span className="text-white/40">(18 decimals, 0 = any)</span>
+            </label>
+            <input
+              type="text"
+              value={minProviderReputation}
+              onChange={(e) => setMinProviderReputation(e.target.value)}
+              placeholder="500000000000000000 (0.5e18)"
+              className="w-full rounded-lg border border-white/10 bg-prism-surface/60 px-3 py-2 font-mono text-sm text-white placeholder:text-white/30 focus:border-prism-accent focus:outline-none"
+            />
+            <p className="mt-1 text-[11px] text-white/40">
+              Only providers with score ≥ this threshold can grab the job. Leave empty for no minimum.
+            </p>
           </div>
 
           {error && (
