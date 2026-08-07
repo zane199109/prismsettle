@@ -9,7 +9,6 @@
 
 import { usePoll } from "./usePoll";
 import { getAgent, getEvents } from "@/lib/prismsettle";
-import { getMockAgent, getMockEvents } from "@/lib/mock-data";
 import type { AgentVO, ChainEvent, Paginated } from "@/lib/types";
 
 export function useAgentDetail(
@@ -26,17 +25,9 @@ export function useAgentDetail(
   } = usePoll<AgentVO>(
     enabled ? `agent:${chainName ?? "all"}:${agentId}` : null,
     async () => {
-      try {
-        const res = await getAgent(agentId as string, chainName);
-        if (res) return res;
-        const mock = getMockAgent(agentId as string);
-        if (mock) return mock;
-        throw new Error("agent not found");
-      } catch {
-        const mock = getMockAgent(agentId as string);
-        if (mock) return mock;
-        throw new Error("agent not found");
-      }
+      const res = await getAgent(agentId as string, chainName);
+      if (res) return res;
+      throw new Error("agent not found");
     },
     { intervalMs, pauseWhenHidden: true },
   );
@@ -57,25 +48,15 @@ export function useAgentEvents(
   const { data, error, isValidating, mutate } = usePoll<Paginated<ChainEvent>>(
     enabled ? `agent-events:${chainName ?? "all"}:${agentId}:${size}` : null,
     async () => {
-      try {
-        const res = await listAgentEvents(agentId as string, chainName, size);
-        const idLower = (agentId ?? "").toLowerCase();
-        const filtered = res.items.filter(
-          (e) =>
-            e.from?.toLowerCase().includes(idLower) ||
-            e.to?.toLowerCase().includes(idLower) ||
-            e.extra?.toLowerCase().includes(idLower),
-        );
-        if (filtered.length > 0) {
-          return { items: filtered, total: filtered.length, page: 1, size };
-        }
-        // Fall back to mock events targeting this agent.
-        const mock = getMockEvents({ to: agentId, size });
-        return { items: mock.items, total: mock.total, page: 1, size };
-      } catch {
-        const mock = getMockEvents({ to: agentId, size });
-        return { items: mock.items, total: mock.total, page: 1, size };
-      }
+      const res = await listAgentEvents(agentId as string, chainName, size);
+      const idLower = (agentId ?? "").toLowerCase();
+      const filtered = res.items.filter(
+        (e) =>
+          e.from?.toLowerCase().includes(idLower) ||
+          e.to?.toLowerCase().includes(idLower) ||
+          e.extra?.toLowerCase().includes(idLower),
+      );
+      return { items: filtered, total: filtered.length, page: 1, size };
     },
     { intervalMs, pauseWhenHidden: true },
   );
@@ -105,6 +86,6 @@ async function listAgentEvents(
   chainName: string | undefined,
   size: number,
 ): Promise<Paginated<ChainEvent>> {
-  const res = await getEvents({ chain_name: chainName, size });
+  const res = await getEvents({ chainName, size });
   return res;
 }

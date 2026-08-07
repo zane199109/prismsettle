@@ -18,7 +18,6 @@
 
 import { usePoll } from "./usePoll";
 import { getReputationHistory } from "@/lib/prismsettle";
-import { getMockReputationHistory } from "@/lib/mock-data";
 import type { ChainEvent } from "@/lib/types";
 
 export type ReputationSource = 0 | 1 | 2; // Validator | Evaluator | Arbitration
@@ -64,13 +63,8 @@ export function useReputationHistory(
   const { data, error, isValidating, mutate } = usePoll(
     enabled ? key : null,
     async () => {
-      try {
-        const res = await getReputationHistory({ agent_id: agentId!, chain_name: chainName, size });
-        if (res.events && res.events.length > 0) return res;
-        return getMockReputationHistory(agentId!);
-      } catch {
-        return getMockReputationHistory(agentId!);
-      }
+      const res = await getReputationHistory({ agentId: agentId!, chainName, size });
+      return res;
     },
     { intervalMs, pauseWhenHidden: true },
   );

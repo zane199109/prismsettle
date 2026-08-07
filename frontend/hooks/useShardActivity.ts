@@ -16,7 +16,6 @@
 import { useMemo } from "react";
 import { usePoll } from "./usePoll";
 import { getShardActivity } from "@/lib/prismsettle";
-import { getLiveShardActivity } from "@/lib/mock-data";
 import type { ShardActivity } from "@/lib/types";
 
 export interface ShardHeatmapData {
@@ -41,13 +40,8 @@ export function useShardActivity(
   const { data, error, isValidating } = usePoll<ShardActivity[]>(
     chainName !== null ? `shard-activity:${chainName ?? "all"}` : null,
     async () => {
-      try {
-        const res = await getShardActivity(chainName);
-        if (res && res.length > 0) return res;
-        return getLiveShardActivity();
-      } catch {
-        return getLiveShardActivity();
-      }
+      const res = await getShardActivity(chainName);
+      return res ?? [];
     },
     { intervalMs, pauseWhenHidden: true },
   );

@@ -19,12 +19,11 @@
 import { useMemo } from "react";
 import { usePoll } from "./usePoll";
 import { getJobStatus } from "@/lib/prismsettle";
-import { getMockJobStatus } from "@/lib/mock-data";
 
 const TERMINAL_STATES = new Set(["Completed", "Resolved", "Cancelled"]);
 
 export interface UseJobStatusPollOptions {
-  chain_name?: string;
+  chainName?: string;
   // Polling interval while the job is non-terminal. Default 3s — short enough
   // for a snappy UX, long enough to avoid hammering the indexer.
   intervalMs?: number;
@@ -34,22 +33,14 @@ export function useJobStatusPoll(
   jobId: string | null | undefined,
   opts: UseJobStatusPollOptions = {},
 ) {
-  const { chain_name, intervalMs = 3000 } = opts;
+  const { chainName: chain_name, intervalMs = 3000 } = opts;
 
   const { data, error, mutate, isValidating } = usePoll(
     jobId ? `job-status:${jobId}` : null,
     async () => {
-      try {
-        const res = await getJobStatus(jobId as string, chain_name);
-        if (res && res.status) return res;
-        const mock = getMockJobStatus(jobId as string);
-        if (mock) return mock;
-        throw new Error("job not found");
-      } catch {
-        const mock = getMockJobStatus(jobId as string);
-        if (mock) return mock;
-        throw new Error("job not found");
-      }
+      const res = await getJobStatus(jobId as string, chain_name);
+      if (res && res.status) return res;
+      throw new Error("job not found");
     },
     {
       intervalMs,

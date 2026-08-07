@@ -9,7 +9,6 @@
 import { useState } from "react";
 import { usePoll } from "./usePoll";
 import { listJobs } from "@/lib/prismsettle";
-import { getMockJobs } from "@/lib/mock-data";
 import type { JobVO, Paginated } from "@/lib/types";
 
 export interface UseJobsOptions {
@@ -37,18 +36,8 @@ export function useJobs(opts: UseJobsOptions = {}) {
   const { data, error, isValidating, mutate } = usePoll<Paginated<JobVO>>(
     key,
     async () => {
-      try {
-        const res = await listJobs({ chain_name: chainName, status, page, size });
-        if (res.items && res.items.length > 0) return res;
-        // Empty page — fall back to mock so the UI is never blank.
-        let items = getMockJobs(userAddress);
-        if (status) items = items.filter((j) => j.status === status);
-        return { items, total: items.length, page, size };
-      } catch {
-        let items = getMockJobs(userAddress);
-        if (status) items = items.filter((j) => j.status === status);
-        return { items, total: items.length, page, size };
-      }
+      const res = await listJobs({ chainName, state: status, page, size });
+      return res;
     },
     { intervalMs, pauseWhenHidden: true },
   );

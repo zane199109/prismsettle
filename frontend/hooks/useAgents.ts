@@ -10,7 +10,6 @@
 
 import { usePoll } from "./usePoll";
 import { listAgents } from "@/lib/prismsettle";
-import { getMockAgents } from "@/lib/mock-data";
 import type { AgentVO, Paginated } from "@/lib/types";
 
 export interface UseAgentsOptions {
@@ -29,16 +28,8 @@ export function useAgents(opts: UseAgentsOptions = {}) {
   const { data, error, isValidating, mutate } = usePoll<Paginated<AgentVO>>(
     key,
     async () => {
-      try {
-        const res = await listAgents({ chain_name: chainName, page, size });
-        if (res.items && res.items.length > 0) return res;
-        // Empty page — fall back to mock so the UI is never blank.
-        const items = getMockAgents(userAddress);
-        return { items, total: items.length, page, size };
-      } catch {
-        const items = getMockAgents(userAddress);
-        return { items, total: items.length, page, size };
-      }
+      const res = await listAgents({ chainName, page, size });
+      return res;
     },
     { intervalMs, pauseWhenHidden: true },
   );

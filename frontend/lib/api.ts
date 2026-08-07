@@ -41,6 +41,8 @@ async function request<T>(
       ...rest,
       headers: {
         "Content-Type": "application/json",
+        // Backend auth (dev-local.yaml auth.tokens). Overridable via env.
+        "X-API-TOKEN": process.env.NEXT_PUBLIC_API_TOKEN || "dev-token",
         ...(rest.headers || {}),
       },
     });
@@ -77,7 +79,7 @@ export const api = {
 // {items, total, page, size} shape used by ListAgents / ListJobs.
 export async function getPaginated<T>(
   path: string,
-  params: { page?: number; size?: number; chain_name?: string; status?: string },
+  params: { page?: number; size?: number; chainName?: string; state?: string },
 ): Promise<Paginated<T>> {
   return api.get<Paginated<T>>(path, params);
 }

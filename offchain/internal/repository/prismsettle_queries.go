@@ -279,13 +279,18 @@ func (r *ChainEventRepository) GetPrismShardActivity(
 	// Aggregate validation counts grouped by the shard value currently stored
 	// in the Symbol column. When Symbol is empty (parser hasn't extracted
 	// shard), all such rows collapse into shard 0.
+	//
+	// Subquery + outer GROUP BY: the CASE alias becomes a real column inside
+	// the derived table, so the outer `GROUP BY "shard_id"` resolves (quoting
+	// a CASE alias directly would look for an actual column and fail).
 	var rows []model.ShardActivityVO
-	q := r.db.WithContext(ctx).
+	sub := r.db.WithContext(ctx).
 		Model(&model.ChainEvent{}).
 		Select(`
 			CASE
 				WHEN COALESCE(symbol, '') = '' THEN 0
-				ELSE CAST(symbol AS SMALLINT)
+				WHEN symbol ~ '^[0-9]+$' THEN CAST(symbol AS SMALLINT)
+				ELSE 0
 			END AS shard_id,
 			COUNT(*)::BIGINT AS validations,
 			MAX(block_time)::BIGINT AS last_activity
@@ -293,9 +298,17 @@ func (r *ChainEventRepository) GetPrismShardActivity(
 		Where("chain_name = ?", chainName).
 		Where("event_type = ?", model.TypePrismValidationSubmitted)
 	if contractAddr != "" {
-		q = q.Where("LOWER(contract) = ?", strings.ToLower(contractAddr))
+		sub = sub.Where("LOWER(contract) = ?", strings.ToLower(contractAddr))
 	}
-	if err := q.Group("shard_id").Scan(&rows).Error; err != nil {
+	// The subquery is an aggregate (COUNT/MAX) so the raw symbol column must
+	// be grouped; the CASE alias then becomes a real column in the derived
+	// table and the outer GROUP BY "shard_id" resolves.
+	sub = sub.Group("symbol")
+	if err := r.db.WithContext(ctx).
+		Table("(?) AS t", sub).
+		Select("shard_id, SUM(validations) AS validations, MAX(last_activity) AS last_activity").
+		Group("shard_id").
+		Scan(&rows).Error; err != nil {
 		return nil, errno.ErrInternal
 	}
 	return rows, nil

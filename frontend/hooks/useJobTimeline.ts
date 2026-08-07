@@ -8,7 +8,6 @@
 
 import { usePoll } from "./usePoll";
 import { getJobTimeline } from "@/lib/prismsettle";
-import { getMockJobTimeline } from "@/lib/mock-data";
 import type { JobTimelineItem } from "@/lib/types";
 
 export function useJobTimeline(
@@ -20,13 +19,8 @@ export function useJobTimeline(
   const { data, error, isValidating, mutate } = usePoll<JobTimelineItem[]>(
     enabled ? `job-timeline:${chainName ?? "all"}:${jobId}` : null,
     async () => {
-      try {
-        const res = await getJobTimeline(jobId!, chainName);
-        if (res && res.length > 0) return res;
-        return getMockJobTimeline(jobId!);
-      } catch {
-        return getMockJobTimeline(jobId!);
-      }
+      const res = await getJobTimeline(jobId!, chainName);
+      return res ?? [];
     },
     { intervalMs, pauseWhenHidden: true },
   );

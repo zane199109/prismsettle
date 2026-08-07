@@ -60,7 +60,7 @@ export function ValidationFeed({
   // look empty during the roll-over.
   const { data, error, isValidating } = usePoll(
     chainName !== null ? `events:${chainName ?? "all"}` : null,
-    () => getEvents({ chain_name: chainName, size: limit }),
+    () => getEvents({ chainName, size: limit }),
     { intervalMs, pauseWhenHidden: true },
   );
 
