@@ -63,19 +63,19 @@ describe("MOCK_JOBS data shape", () => {
 describe("amount formatting", () => {
   function formatAmount(amount: string | undefined): string {
     if (!amount) return "—";
-    return `${(Number(amount) / 1e6).toFixed(2)} USDC`;
+    return `${(Number(amount) / 1e18).toFixed(2)}`;
   }
 
   it("formats a valid amount string", () => {
-    expect(formatAmount("1000000")).toBe("1.00 USDC");
+    expect(formatAmount("1000000000000000000")).toBe("1.00");
   });
 
   it("formats a larger amount", () => {
-    expect(formatAmount("5000000")).toBe("5.00 USDC");
+    expect(formatAmount("5000000000000000000")).toBe("5.00");
   });
 
   it("formats a small amount", () => {
-    expect(formatAmount("750000")).toBe("0.75 USDC");
+    expect(formatAmount("750000000000000000")).toBe("0.75");
   });
 
   it("returns em dash for undefined", () => {

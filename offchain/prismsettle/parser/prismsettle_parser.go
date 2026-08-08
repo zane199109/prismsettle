@@ -119,10 +119,16 @@ func (p *PrismSettleParser) Parse(log types.Log) (any, error) {
 		event.EventType = model.TypePrismAgentRegistered
 		event.To = agentIDFromTopic(log.Topics[1])
 		event.From = common.BytesToAddress(log.Topics[2].Bytes()).Hex()
-		// Metadata (string) is not stored in ChainEvent — the schema has no
-		// free-form text field. The EventIngestService post-hook extracts
-		// agentId/owner from this event and upserts into agent_registry.
-		// Full metadata capture is deferred to Phase 9 (replay from raw logs).
+		// Decode the ABI-encoded dynamic string: [offset][length][bytes].
+		if len(log.Data) >= 64 {
+			offset := new(big.Int).SetBytes(log.Data[:32]).Uint64()
+			if uint64(len(log.Data)) >= offset+32 {
+				length := new(big.Int).SetBytes(log.Data[offset : offset+32]).Uint64()
+				if uint64(len(log.Data)) >= offset+32+length {
+					event.Metadata = string(log.Data[offset+32 : offset+32+length])
+				}
+			}
+		}
 		event.Value = "0"
 
 	case EventValidationSubmittedSig.Hex():
@@ -144,6 +150,9 @@ func (p *PrismSettleParser) Parse(log types.Log) (any, error) {
 		event.TokenAddr = common.BytesToHash(log.Data[32:64]).Hex()
 		// source is uint8 at offset 96 (after score|proofHash|timestamp)
 		event.Symbol = fmt.Sprintf("%d", log.Data[96+31]) // last byte of the 32-byte source slot
+		// jobId is the 5th data slot (offset 128) — keep job-scoped events
+		// linkable across the job's full lifecycle (fund → validate → resolve).
+		event.JobID = fmt.Sprintf("0x%064x", new(big.Int).SetBytes(log.Data[128:160]))
 
 	case EventAggregatedSig.Hex():
 		// Topics: [sig, agentId]

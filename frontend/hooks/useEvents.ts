@@ -39,10 +39,18 @@ export function useEvents(opts: UseEventsOptions = {}) {
   const { data, error, isValidating, mutate } = usePoll<Paginated<ChainEvent>>(
     key,
     async () => {
-      const res = await getEvents({ chainName, page, size });
-      const items = to
-        ? res.items.filter((e) => e.to?.toLowerCase() === to.toLowerCase())
-        : res.items;
+      // Server-side filters first (the backend supports event_type + agentId
+      // since the pagination rework); client-side filtering as a safety net.
+      const res = await getEvents({
+        chainName,
+        page,
+        size,
+        eventType,
+        agentId: to,
+      });
+      let items = res.items;
+      if (eventType) items = items.filter((e) => e.event_type === eventType);
+      if (to) items = items.filter((e) => e.to?.toLowerCase() === to.toLowerCase());
       return { ...res, items };
     },
     { intervalMs, pauseWhenHidden: true },

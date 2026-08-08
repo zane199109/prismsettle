@@ -69,6 +69,9 @@ contract IntegrationTest is Test {
         // Seed Phase：注册 4 个 Agent + 设置初始声誉
         registry.registerAgent(AGENT_DEFI, '{"endpointUrl":"http://localhost:8001","capabilities":"defi"}');
         registry.registerAgent(AGENT_EVAL, '{"endpointUrl":"http://localhost:8004","capabilities":"evaluation"}');
+        // AGENT_PROVIDER is owned by the provider wallet (grabJob requires
+        // caller == agent owner or delegated operator).
+        vm.prank(provider);
         registry.registerAgent(AGENT_PROVIDER, '{"endpointUrl":"","capabilities":"provider"}');
         registry.seedAgent(AGENT_DEFI, uint96(SEED_SCORE));
         registry.seedAgent(AGENT_EVAL, uint96(SEED_SCORE));

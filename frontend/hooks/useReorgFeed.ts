@@ -4,15 +4,19 @@
 
 import { usePoll } from "./usePoll";
 import { getReorgFeed } from "@/lib/prismsettle";
+import { CHAIN_NAME } from "@/lib/contracts";
 import type { ChainEvent } from "@/lib/types";
 
 export function useReorgFeed(
   opts: { chainName?: string; limit?: number; intervalMs?: number } = {},
 ) {
-  const { chainName, limit = 30, intervalMs = 4000 } = opts;
+  const { chainName = CHAIN_NAME, limit = 30, intervalMs = 4000 } = opts;
   const { data, error, isValidating, mutate } = usePoll<ChainEvent[]>(
     `reorg-feed:${chainName ?? "all"}:${limit}`,
-    () => getReorgFeed(chainName, limit),
+    async () => {
+      const res = await getReorgFeed(chainName, limit);
+      return res?.items ?? [];
+    },
     { intervalMs, pauseWhenHidden: true },
   );
   return {

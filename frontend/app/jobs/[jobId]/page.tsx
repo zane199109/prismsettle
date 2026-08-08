@@ -18,8 +18,10 @@ import { monadTestnet } from "wagmi/chains";
 import { keccak256, toHex } from "viem";
 
 import { JobStatusTracker } from "@/components/job/JobStatusTracker";
+import { JobEventTimeline } from "@/components/job/JobEventTimeline";
 import { FundFlowChart } from "@/components/job/FundFlowChart";
 import { FundingPathBadge } from "@/components/job/FundingPathBadge";
+import { GrabAttemptsList } from "@/components/job/GrabAttemptsList";
 import { useJobStatusPoll } from "@/hooks/useJobStatusPoll";
 import { useJobTimeline } from "@/hooks/useJobTimeline";
 import { useEvents } from "@/hooks/useEvents";
@@ -94,6 +96,9 @@ function JobDetailBody({ jobId }: { jobId: string }) {
           <JobStatusTracker current={status ?? "Created"} timeline={timeline} />
         </section>
 
+        {/* Full lifecycle event stream (submit / reject / dispute / arbitration) */}
+        <JobEventTimeline timeline={timeline} />
+
         {/* Deliverable submission (8.5b, FR-JM03) — first submit or resubmit after reject */}
         {canSubmit && <DeliverableSubmit jobId={jobId} />}
 
@@ -107,6 +112,9 @@ function JobDetailBody({ jobId }: { jobId: string }) {
 
         {/* Fund flow (8.5d, FR-JM04) — reads real on-chain Job state */}
         <FundFlowFromChain jobId={jobId} />
+
+        {/* Grab competition — who tried, who won, why the rest lost */}
+        <GrabAttemptsList jobId={jobId} title="抢单竞争过程" />
       </main>
     </div>
   );
@@ -298,7 +306,7 @@ function DeliverableSubmit({ jobId }: { jobId: string }) {
     <section className="mt-6 rounded-xl border border-white/10 bg-prism-surface/40 p-5">
       <h2 className="mb-3 flex items-center gap-2 text-sm font-medium text-white">
         <FileUp className="h-4 w-4 text-prism-accent" />
-        Submit Deliverable (FR-JM03)
+        Submit Deliverable
       </h2>
       <form onSubmit={handleSubmit} className="space-y-3">
         <div>
@@ -545,7 +553,7 @@ function DisputePanel({ jobId, status, resolvedRuling }: { jobId: string; status
     <section className="mt-6 rounded-xl border border-amber-500/30 bg-amber-500/5 p-5">
       <h2 className="mb-3 flex items-center gap-2 text-sm font-medium text-amber-400">
         <Gavel className="h-4 w-4" />
-        Arbitration (FR-JM05 / FR-JM06)
+        Arbitration
       </h2>
       <p className="mb-3 text-[11px] text-white/40">
         Either party (buyer or provider) may open a dispute within 24h of the latest submit. Both sides post a{" "}

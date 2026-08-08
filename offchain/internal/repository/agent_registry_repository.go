@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 
@@ -26,9 +27,8 @@ func NewAgentRegistryRepository(db *gorm.DB) *AgentRegistryRepository {
 
 // UpsertFromEvent inserts or updates an agent_registry row from an
 // AgentRegistered ChainEvent. The unique key is (chain_name, agent_id).
-// metadata/endpoint are left empty here — the indexer parser does not
-// currently decode the metadata string (no free-form text field on
-// ChainEvent). Phase 9 may backfill metadata via raw-log replay.
+// The metadata string (JSON: {"endpointUrl": ..., "capabilities": ...}) is
+// stored raw and its endpointUrl extracted into the endpoint column.
 func (r *AgentRegistryRepository) UpsertFromEvent(ctx context.Context, ev *model.ChainEvent) error {
 	if ev == nil {
 		return errno.ErrInvalidParam
@@ -37,15 +37,26 @@ func (r *AgentRegistryRepository) UpsertFromEvent(ctx context.Context, ev *model
 		ChainName:    ev.ChainName,
 		AgentID:      strings.ToLower(ev.To),
 		Owner:        strings.ToLower(ev.From),
+		Metadata:     ev.Metadata,
 		RegisteredAt: ev.BlockTime,
 		TxHash:       ev.TxHash,
 		BlockNumber:  ev.BlockNumber,
 	}
-	// On conflict, update owner + latest block info (re-registration is allowed).
+	if ev.Metadata != "" {
+		var meta struct {
+			EndpointURL string `json:"endpointUrl"`
+		}
+		if err := json.Unmarshal([]byte(ev.Metadata), &meta); err == nil {
+			rec.Endpoint = meta.EndpointURL
+		}
+	}
+	// On conflict, update owner + metadata + latest block info (re-registration is allowed).
 	if err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "chain_name"}, {Name: "agent_id"}},
 		DoUpdates: clause.Assignments(map[string]interface{}{
 			"owner":         rec.Owner,
+			"metadata":      rec.Metadata,
+			"endpoint":      rec.Endpoint,
 			"registered_at": rec.RegisteredAt,
 			"tx_hash":       rec.TxHash,
 			"block_number":  rec.BlockNumber,

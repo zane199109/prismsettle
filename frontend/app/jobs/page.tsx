@@ -30,7 +30,7 @@ import {
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useJobs } from "@/hooks/useJobs";
-import { cn, formatAgentId, formatTime } from "@/lib/utils";
+import { cn, formatAgentId, formatTime, formatBigInt, tokenDecimals, tokenLabel } from "@/lib/utils";
 
 const STATUS_OPTIONS = [
   { value: "all", label: "All statuses" },
@@ -182,7 +182,7 @@ export default function JobsListPage() {
                         #{job.shard_id}
                       </TableCell>
                       <TableCell className="font-mono text-xs text-white/70">
-                        {job.amount ? `${(Number(job.amount) / 1e6).toFixed(2)} USDC` : "—"}
+                        {job.amount ? `${formatBigInt(job.amount, tokenDecimals(job.token)).toFixed(2)} ${tokenLabel(job.token)}` : "—"}
                       </TableCell>
                       <TableCell className="font-mono text-xs text-white/70">
                         {formatAgentId(job.creator)}

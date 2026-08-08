@@ -158,6 +158,13 @@ func (p *PrismSettleHookParser) Parse(log types.Log) (any, error) {
 		return nil, fmt.Errorf("prismsettle_hook: unknown event sig %s", log.Topics[0].Hex())
 	}
 
+	// Disputed / DisputeResolved / ArbitratorSelected are job-scoped: To
+	// carries the jobId. ArbitratorRegistered is agent-scoped (To = agentId).
+	switch event.EventType {
+	case model.TypePrismDisputed, model.TypePrismDisputeResolved, model.TypePrismArbitratorSelected:
+		event.JobID = event.To
+	}
+
 	// From field is used for arbitrator address events; empty for Disputed.
 	return event, nil
 }

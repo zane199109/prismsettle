@@ -110,6 +110,13 @@ func (p *PGStorage) AutoMigrate(ctx context.Context) error {
 		return err
 	}
 
+	// Grab attempts (competition visibility): agent services report grab
+	// outcomes so operators can see why their agent lost a job.
+	if err := p.db.WithContext(ctx).AutoMigrate(&model.GrabAttempt{}); err != nil {
+		logger.Errorf("failed to migrate grab_attempts table", logger.Error(err))
+		return err
+	}
+
 	// Phase 7 task 7.2: trust_thresholds holds per-agent or default
 	// ALLOW/DENY thresholds used by the /trust endpoint (FR-AP11).
 	if err := p.db.WithContext(ctx).AutoMigrate(&model.TrustThreshold{}); err != nil {

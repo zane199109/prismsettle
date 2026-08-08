@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	lru "github.com/hashicorp/golang-lru/v2"
 	_ "github.com/zane/web3-offchain/prismsettle/parser"
@@ -28,6 +29,43 @@ import (
 	"github.com/zane/web3-offchain/pkg/rpc"
 	"github.com/zane/web3-offchain/pkg/utils"
 )
+
+// isPrismAmountEvent reports whether a PrismSettleJob event carries an
+// escrow amount whose TokenAddr is the Job contract mirror rather than the
+// real token (resolved from getJobPaymentToken).
+func isPrismAmountEvent(eventType string) bool {
+	switch eventType {
+	case "PRISM_JOB_FUNDED", "PRISM_JOB_COMPLETED", "PRISM_JOB_REFUNDED", "PRISM_ARBITRATION_EXECUTED":
+		return true
+	}
+	return false
+}
+
+// getJobPaymentToken(uint256) selector.
+var jobPaymentTokenSig = crypto.Keccak256([]byte("getJobPaymentToken(uint256)"))[:4]
+
+// fetchPaymentToken reads the per-job escrow token from the Job contract via
+// eth_call getJobPaymentToken(jobId). Returns "" on any failure (the caller
+// then keeps the mirrored TokenAddr).
+func (l *EVMListener) fetchPaymentToken(ctx context.Context, client *ethclient.Client, jobID string) (string, error) {
+	id, ok := new(big.Int).SetString(strings.TrimPrefix(jobID, "0x"), 16)
+	if !ok {
+		return "", fmt.Errorf("bad job id: %s", jobID)
+	}
+	calldata := append(append([]byte{}, jobPaymentTokenSig...), common.LeftPadBytes(id.Bytes(), 32)...)
+	jobAddr := common.HexToAddress(l.chainConfig.ContractAddr)
+	out, err := client.CallContract(ctx, ethereum.CallMsg{
+		To:   &jobAddr,
+		Data: calldata,
+	}, nil)
+	if err != nil {
+		return "", err
+	}
+	if len(out) < 32 {
+		return "", fmt.Errorf("short response for getJobPaymentToken")
+	}
+	return common.BytesToAddress(out[:32]).Hex(), nil
+}
 
 // EVMListener listens to EVM blockchain events, processes blocks in order,
 // handles reorg, caches block headers, and persists events reliably.
@@ -560,6 +598,17 @@ func (l *EVMListener) syncBlockRange(ctx context.Context, startBlock uint64, end
 				logger.String("tx_hash", logEntry.TxHash.Hex()),
 				logger.Uint64("block", logEntry.BlockNumber))
 			continue
+		}
+
+		// Escrow token resolution: PrismSettleJob amount events (Funded /
+		// Completed / Refunded / ArbitrationExecuted) carry the Job contract
+		// in TokenAddr. The real escrow token is the per-job paymentToken in
+		// the contract — resolve it via eth_call getJobPaymentToken(jobId) so
+		// the getTokenInfo call below stores the correct symbol/decimals.
+		if isPrismAmountEvent(string(ce.EventType)) {
+			if tok, terr := l.fetchPaymentToken(ctx, client, ce.To); terr == nil && tok != "" {
+				ce.TokenAddr = tok
+			}
 		}
 
 		// Get block time from cache or RPC

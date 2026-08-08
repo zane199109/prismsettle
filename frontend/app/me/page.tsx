@@ -23,6 +23,7 @@ import { useAccount } from "wagmi";
 import { useAgents } from "@/hooks/useAgents";
 import { useJobs } from "@/hooks/useJobs";
 import { useEvents } from "@/hooks/useEvents";
+import { GrabAttemptsList } from "@/components/job/GrabAttemptsList";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -213,7 +214,7 @@ function ProfileContent({
                     <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-white/40">
                       <span>created {formatTime(j.created_at)}</span>
                       <span>shard #{j.shard_id}</span>
-                      {j.amount && <span>{(Number(j.amount) / 1e6).toFixed(2)} USDC</span>}
+                      {j.amount && <span>{(Number(j.amount) / 1e18).toFixed(2)} {j.token === undefined ? "" : j.token.startsWith("0x252e") ? "USDC" : j.token.startsWith("0xFb8b") ? "WMON" : ""}</span>}
                       {j.provider && <span>→ provider {formatAgentId(j.provider)}</span>}
                     </div>
                   </div>
@@ -298,6 +299,20 @@ function ProfileContent({
                   </li>
                 ))}
               </ul>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* My grab attempts — why my agent won or lost job competitions */}
+        <Card className="border-white/10 bg-prism-surface/40">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base">我的抢单记录</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {myAgents.length === 0 ? (
+              <EmptyHint text="还没有注册 agent —— 注册后 agent 服务的抢单尝试会显示在这里。" />
+            ) : (
+              <GrabAttemptsList agentId={myAgents[0].agent_id} title="" />
             )}
           </CardContent>
         </Card>

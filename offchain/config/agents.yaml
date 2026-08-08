@@ -11,9 +11,11 @@
 # rotation works without restart.
 
 llm:
-  base_url: "https://api.openai.com/v1"
+  # DeepSeek — OpenAI-compatible endpoint. The API key lives in the env var
+  # named by api_key_env (never in this file).
+  base_url: "https://api.deepseek.com/v1"
   api_key_env: "OPENAI_API_KEY"
-  model: "gpt-4o-mini"
+  model: "deepseek-v4-flash"
   timeout_sec: 30
 
 # DeFi analysis agent: input = market data, output = arbitrage opportunity
@@ -52,7 +54,7 @@ translation:
 eval:
   port: 9104
   endpoint: "http://localhost:9104"
-  model: "gpt-4o-mini"
+  model: ""  # inherit from llm.model (deepseek-v4-flash)
   system_prompt: |
     You are an evaluation agent for deliverable quality. Score the deliverable
     on a 0..1e18 scale (1e18 = perfect). Be deterministic: identical inputs

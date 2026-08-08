@@ -1,0 +1,26 @@
+{
+  "timestamp": "2026-07-28T19:00:14+08:00",
+  "concurrency": 50,
+  "v0": {
+    "total_sent": 50,
+    "total_success": 50,
+    "total_abort": 0,
+    "total_failed": 0,
+    "abort_rate": 0,
+    "throughput_tps": 5.089341237726282,
+    "latency_p50": "1516ms",
+    "latency_p95": "2195ms",
+    "latency_p99": "2470ms"
+  },
+  "v1": {
+    "total_sent": 50,
+    "total_success": 50,
+    "total_abort": 0,
+    "total_failed": 0,
+    "abort_rate": 0,
+    "throughput_tps": 5.702936948621429,
+    "latency_p50": "1310ms",
+    "latency_p95": "2110ms",
+    "latency_p99": "2123ms"
+  }
+}

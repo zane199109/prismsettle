@@ -125,7 +125,8 @@ export const MOCK_JOBS: JobVO[] = [
     evaluator: DEMO_ADDRESSES.dave,
     created_at: hoursAgo(20),
     updated_at: hoursAgo(19),
-    amount: "1000000",
+    amount: "1000000000000000000",
+    token: "0x252e44550f8B9997901e5540FC0E1dA52Ab099C6",
     provider: DEMO_ADDRESSES.bob,
   },
   {
@@ -136,7 +137,8 @@ export const MOCK_JOBS: JobVO[] = [
     evaluator: "",
     created_at: hoursAgo(8),
     updated_at: hoursAgo(1),
-    amount: "5000000",
+    amount: "5000000000000000000",
+    token: "0x252e44550f8B9997901e5540FC0E1dA52Ab099C6",
     provider: DEMO_ADDRESSES.dave,
   },
   {
@@ -147,7 +149,8 @@ export const MOCK_JOBS: JobVO[] = [
     evaluator: "",
     created_at: hoursAgo(4),
     updated_at: hoursAgo(3),
-    amount: "2500000",
+    amount: "2500000000000000000",
+    token: "0x252e44550f8B9997901e5540FC0E1dA52Ab099C6",
     provider: "",
   },
   {
@@ -158,7 +161,8 @@ export const MOCK_JOBS: JobVO[] = [
     evaluator: DEMO_ADDRESSES.dave,
     created_at: hoursAgo(12),
     updated_at: minutesAgo(30),
-    amount: "3000000",
+    amount: "3000000000000000000",
+    token: "0x252e44550f8B9997901e5540FC0E1dA52Ab099C6",
     provider: DEMO_ADDRESSES.alice,
   },
   {
@@ -169,7 +173,8 @@ export const MOCK_JOBS: JobVO[] = [
     evaluator: "",
     created_at: hoursAgo(48),
     updated_at: hoursAgo(40),
-    amount: "1000000",
+    amount: "1000000000000000000",
+    token: "0x252e44550f8B9997901e5540FC0E1dA52Ab099C6",
     provider: DEMO_ADDRESSES.carol,
   },
   {
@@ -180,7 +185,8 @@ export const MOCK_JOBS: JobVO[] = [
     evaluator: "",
     created_at: minutesAgo(15),
     updated_at: minutesAgo(15),
-    amount: "750000",
+    amount: "750000000000000000",
+    token: "0x252e44550f8B9997901e5540FC0E1dA52Ab099C6",
     provider: "",
   },
   {
@@ -191,7 +197,8 @@ export const MOCK_JOBS: JobVO[] = [
     evaluator: DEMO_ADDRESSES.dave,
     created_at: hoursAgo(30),
     updated_at: hoursAgo(28),
-    amount: "2000000",
+    amount: "2000000000000000000",
+    token: "0x252e44550f8B9997901e5540FC0E1dA52Ab099C6",
     provider: DEMO_ADDRESSES.carol,
   },
   {
@@ -202,7 +209,8 @@ export const MOCK_JOBS: JobVO[] = [
     evaluator: DEMO_ADDRESSES.dave,
     created_at: hoursAgo(60),
     updated_at: hoursAgo(58),
-    amount: "4000000",
+    amount: "4000000000000000000",
+    token: "0x252e44550f8B9997901e5540FC0E1dA52Ab099C6",
     provider: DEMO_ADDRESSES.alice,
   },
 ];

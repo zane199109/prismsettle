@@ -65,8 +65,13 @@ func main() {
 	}
 	// Initialize minimal offchain config so logger.InitLogger() doesn't panic
 	// on nil config.Cfg (logger.init reads config.Cfg.Server.LogPath).
+	// LOG_PATH overrides the docker default (/app/logs) for local runs.
+	logPath := os.Getenv("LOG_PATH")
+	if logPath == "" {
+		logPath = "/app/logs"
+	}
 	config.Cfg = &config.Config{
-		Server: config.ServerConfig{LogPath: "/app/logs"},
+		Server: config.ServerConfig{LogPath: logPath},
 	}
 	logger.InitLogger()
 

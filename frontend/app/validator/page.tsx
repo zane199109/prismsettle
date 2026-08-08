@@ -20,11 +20,19 @@ import { ValidatorLeaderboard } from "@/components/validators/ValidatorLeaderboa
 import { ValidationRecords } from "@/components/validators/ValidationRecords";
 import { SlashHistory } from "@/components/validators/SlashHistory";
 import { useEvents } from "@/hooks/useEvents";
+import { useAgents } from "@/hooks/useAgents";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { REGISTRY_ADDRESS, REGISTRY_ABI, contractsReady } from "@/lib/contracts";
 
 type Action = "stake" | "unstake" | "withdraw" | "validate";
+
+// Random 32-byte proof hash (0x + 64 hex) — a placeholder verification proof.
+function randomProofHash(): string {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return "0x" + Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+}
 
 export default function ValidatorConsolePage() {
   const { address, chain } = useAccount();
@@ -34,8 +42,7 @@ export default function ValidatorConsolePage() {
   const [amount, setAmount] = useState("");
   const [validateAgentId, setValidateAgentId] = useState("");
   const [validateScore, setValidateScore] = useState("");
-  const [validateProofHash, setValidateProofHash] = useState("");
-  const [validateJobId, setValidateJobId] = useState("");
+  const [validateProofHash, setValidateProofHash] = useState(randomProofHash());
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<`0x${string}` | null>(null);
@@ -70,6 +77,7 @@ export default function ValidatorConsolePage() {
     size: 200,
     intervalMs: 15000,
   });
+  const { agents: registeredAgents } = useAgents({ size: 100 });
   const myValidationCount = address
     ? myValidations.filter((e) => e.from.toLowerCase() === address.toLowerCase()).length
     : 0;
@@ -127,20 +135,18 @@ export default function ValidatorConsolePage() {
           chainId: monadTestnet.id,
         });
       } else if (action === "validate") {
-        // submitValidation(agentId, score, proofHash, jobId, source=0) — Validator path (FR-C03 / UC-02).
+        // submitValidation(agentId, score, proofHash, jobId=0, source=0) — Validator path.
         const agentIdBig = parseBigInt(validateAgentId, "agentId");
         if (agentIdBig === null) return;
         const scoreBig = parseScore(validateScore);
         if (scoreBig === null) return;
         const proofHash = parseBytes32(validateProofHash);
         if (proofHash === null) return;
-        const jobIdBig = validateJobId.trim() === "" ? 0n : parseBigInt(validateJobId, "jobId");
-        if (jobIdBig === null) return;
         hash = await writeContractAsync({
           address: REGISTRY_ADDRESS,
           abi: REGISTRY_ABI,
           functionName: "submitValidation",
-          args: [agentIdBig, scoreBig, proofHash, jobIdBig, 0],
+          args: [agentIdBig, scoreBig, proofHash, 0n, 0],
           chainId: monadTestnet.id,
         });
       } else {
@@ -306,7 +312,7 @@ export default function ValidatorConsolePage() {
                     <span className="text-[10px] text-white/40">MON</span>
                   </div>
                   <div className="mt-1 text-[10px] text-white/40">
-                    {myValidationCount} validations · 0.001 MON each (mock rate, V2 lands in FR-C11)
+                    {myValidationCount} validations · 0.001 MON each (mock rate, real rewards land in V2)
                   </div>
                 </div>
               </div>
@@ -366,15 +372,25 @@ export default function ValidatorConsolePage() {
                   {action === "validate" && (
                     <div className="space-y-3">
                       <div>
-                        <label className="mb-1 block text-xs text-white/60">agentId (uint256)</label>
-                        <input
-                          type="text"
+                        <label className="mb-1 block text-xs text-white/60">Agent to validate</label>
+                        <select
                           required
                           value={validateAgentId}
                           onChange={(e) => setValidateAgentId(e.target.value)}
-                          placeholder="1 or 0x..."
-                          className="w-full rounded-md border border-white/10 bg-prism-surface/60 px-3 py-1.5 font-mono text-sm text-white placeholder:text-white/30 focus:border-prism-accent focus:outline-none"
-                        />
+                          className="w-full rounded-md border border-white/10 bg-prism-surface/60 px-3 py-1.5 font-mono text-sm text-white focus:border-prism-accent focus:outline-none"
+                        >
+                          <option value="" className="bg-zinc-900">Select an agent…</option>
+                          {registeredAgents.map((a) => (
+                            <option key={a.agent_id} value={a.agent_id} className="bg-zinc-900">
+                              {a.agent_id.length > 20 ? `${a.agent_id.slice(0, 14)}…${a.agent_id.slice(-6)}` : a.agent_id}
+                              {" · "}
+                              {a.score && a.score !== "0" ? (Number(BigInt(a.score)) / 1e18).toFixed(2) : "new"}
+                            </option>
+                          ))}
+                        </select>
+                        <p className="mt-1 text-[11px] text-white/40">
+                          Picked from the registered agents list — review its reputation history, then score it.
+                        </p>
                       </div>
                       <div>
                         <label className="mb-1 block text-xs text-white/60">score (0..1, e.g. 0.85)</label>
@@ -389,31 +405,32 @@ export default function ValidatorConsolePage() {
                         <p className="mt-1 text-[11px] text-white/40">Scaled to 1e18 — 0.85 → 0.85e18.</p>
                       </div>
                       <div>
-                        <label className="mb-1 block text-xs text-white/60">proofHash (bytes32, 0x + 64 hex)</label>
-                        <input
-                          type="text"
-                          required
-                          value={validateProofHash}
-                          onChange={(e) => setValidateProofHash(e.target.value)}
-                          placeholder="0x..."
-                          className="w-full rounded-md border border-white/10 bg-prism-surface/60 px-3 py-1.5 font-mono text-sm text-white placeholder:text-white/30 focus:border-prism-accent focus:outline-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="mb-1 block text-xs text-white/60">jobId (uint256, optional — defaults to 0)</label>
-                        <input
-                          type="text"
-                          value={validateJobId}
-                          onChange={(e) => setValidateJobId(e.target.value)}
-                          placeholder="0"
-                          className="w-full rounded-md border border-white/10 bg-prism-surface/60 px-3 py-1.5 font-mono text-sm text-white placeholder:text-white/30 focus:border-prism-accent focus:outline-none"
-                        />
+                        <label className="mb-1 block text-xs text-white/60">
+                          proofHash <span className="text-white/30">(auto-generated)</span>
+                        </label>
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            required
+                            value={validateProofHash}
+                            onChange={(e) => setValidateProofHash(e.target.value)}
+                            placeholder="0x + 64 hex"
+                            className="w-full rounded-md border border-white/10 bg-prism-surface/60 px-3 py-1.5 font-mono text-xs text-white placeholder:text-white/30 focus:border-prism-accent focus:outline-none"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setValidateProofHash(randomProofHash())}
+                            className="shrink-0 rounded-md border border-white/10 bg-prism-surface/60 px-3 py-1.5 text-xs text-white/60 hover:border-prism-accent/50 hover:text-prism-accent"
+                          >
+                            Auto
+                          </button>
+                        </div>
                       </div>
                       <p className="rounded-md border border-prism-accent/30 bg-prism-accent/5 p-2 text-[11px] text-prism-accent/80">
-                        source=0 (Validator). Evaluator source=1/2 is auto-triggered off-chain after job completion / arbitration.
+                        You will submit as a Validator (source=0). Confirm the score and submit.
                       </p>
                       {stakeAmount === 0n && (
-                        <p className="text-[11px] text-amber-400">Stake at least 5 MON first — Validators only (FR-C03).</p>
+                        <p className="text-[11px] text-amber-400">Stake at least 5 MON first to validate.</p>
                       )}
                     </div>
                   )}

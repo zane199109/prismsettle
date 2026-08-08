@@ -130,7 +130,7 @@ export function V0V1Comparison() {
           <AlertCircle className="h-4 w-4" />
         )}
         <span>
-          FR-T06 (V1 abort rate &lt; 5%):{" "}
+          Target: V1 abort rate &lt; 5%:{" "}
           <strong>{comparison.meets_fr_t06 ? "PASS" : "PENDING"}</strong>
           <span className="ml-2 text-xs opacity-70">(source: {comparison.source})</span>
         </span>

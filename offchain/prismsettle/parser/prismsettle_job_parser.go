@@ -36,9 +36,9 @@ func (p *PrismSettleJobParser) Name() string { return "PrismSettleJob" }
 // Event signature hashes (keccak256 of the canonical signature).
 // MUST match the Solidity event declarations in PrismSettleJob.sol exactly.
 var (
-	// event JobCreated(uint256 indexed agentId, uint256 indexed jobId, address buyer, uint64 deadline, address hook, uint96 minProviderReputation);
+	// event JobCreated(uint256 indexed agentId, uint256 indexed jobId, address buyer, uint64 deadline, address hook, uint96 minProviderReputation, address paymentToken);
 	EventJobCreatedSig = crypto.Keccak256Hash([]byte(
-		"JobCreated(uint256,uint256,address,uint64,address,uint96)",
+		"JobCreated(uint256,uint256,address,uint64,address,uint96,address)",
 	))
 
 	// event Funded(uint256 indexed jobId, address buyer, uint256 amount);
@@ -100,13 +100,14 @@ func (p *PrismSettleJobParser) Parse(log types.Log) (any, error) {
 	switch log.Topics[0].Hex() {
 	case EventJobCreatedSig.Hex():
 		// Topics: [sig, agentId, jobId]
-		// Data:   buyer (address, 32 bytes) | deadline (uint64, 32 bytes) | hook (address, 32 bytes) | minProviderReputation (uint96, 32 bytes)
-		// Total data length: 4 * 32 = 128 bytes
+		// Data:   buyer (address) | deadline (uint64) | hook (address) |
+		//         minProviderReputation (uint96) | paymentToken (address)
+		// Total data length: 5 * 32 = 160 bytes
 		if len(log.Topics) < 3 {
 			return nil, fmt.Errorf("prismsettle_job JobCreated: want 3 topics, got %d", len(log.Topics))
 		}
-		if len(log.Data) < 128 {
-			return nil, fmt.Errorf("prismsettle_job JobCreated: data too short (min 128 bytes, got %d)", len(log.Data))
+		if len(log.Data) < 160 {
+			return nil, fmt.Errorf("prismsettle_job JobCreated: data too short (min 160 bytes, got %d)", len(log.Data))
 		}
 		event.EventType = model.TypePrismJobCreated
 		// From = agentId (the agent this job is created for)
@@ -248,6 +249,9 @@ func (p *PrismSettleJobParser) Parse(log types.Log) (any, error) {
 	default:
 		return nil, fmt.Errorf("prismsettle_job: unknown event sig %s", log.Topics[0].Hex())
 	}
+
+	// Every PrismSettleJob event is job-scoped: To carries the jobId.
+	event.JobID = event.To
 
 	return event, nil
 }

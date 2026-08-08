@@ -10,6 +10,7 @@ import {ArbitrationHook} from "./ArbitrationHook.sol";
 /// @notice Minimal Registry interface for reputation queries used by grabJob.
 interface IRegistryView {
     function getScore(uint256 agentId) external view returns (uint256);
+    function agentOwner(uint256 agentId) external view returns (address);
 }
 
 /// @title IRegistryWriter
@@ -217,8 +218,9 @@ contract PrismSettleJob is AccessControl {
 
     /// @notice Provider grabs a Funded job. The contract checks the
     ///         provider's agent reputation against the job's minimum
-    ///         requirement. Frontend should pre-filter, contract is
-    ///         the safety net.
+    ///         requirement, and that the caller is the agent's owner —
+    ///         agents are autonomous (their wallet is their operator);
+    ///         nobody else may claim a job on their behalf.
     /// @param jobId            The job to grab.
     /// @param providerAgentId  The provider's agentId in the Registry.
     function grabJob(uint256 jobId, uint256 providerAgentId) external {
@@ -233,6 +235,11 @@ contract PrismSettleJob is AccessControl {
         // Check provider reputation against minimum requirement.
         uint256 score = IRegistryView(registry).getScore(providerAgentId);
         require(score >= uint256(j.minProviderReputation), "PrismSettle: reputation too low");
+
+        // Ownership: only the agent's registered owner may claim jobs with
+        // that agentId. Without this, anyone could grab a job with a
+        // borrowed high-reputation agentId and steal the payout.
+        require(msg.sender == IRegistryView(registry).agentOwner(providerAgentId), "PrismSettle: not owner");
 
         j.provider = msg.sender;
         j.providerAgentId = providerAgentId;

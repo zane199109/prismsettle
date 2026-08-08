@@ -9,7 +9,7 @@
 //   3. fundViaToken(jobId, amount, "0x")  // empty receipt = ERC-20 path
 // Then route to /jobs/[jobId].
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, Loader2 } from "lucide-react";
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract } from "wagmi";
@@ -18,6 +18,8 @@ import { decodeEventLog, parseAbiItem, parseUnits } from "viem";
 
 import { TrustGate } from "@/components/job/TrustGate";
 import { FundingPathBadge } from "@/components/job/FundingPathBadge";
+import { useAgents } from "@/hooks/useAgents";
+import { agentCategory, parseNaturalLanguage } from "@/lib/utils";
 import type { TrustCheckResult } from "@/lib/types";
 import {
   JOB_CONTRACT_ADDRESS,
@@ -39,6 +41,7 @@ const JOB_CREATED_EVENT = parseAbiItem(
   "event JobCreated(uint256 indexed agentId, uint256 indexed jobId, address buyer, uint64 deadline, address hook, uint96 minProviderReputation, address paymentToken)"
 );
 
+
 function NewJobBody() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -47,7 +50,14 @@ function NewJobBody() {
   const { address, chain } = useAccount();
   const { writeContractAsync, isPending: isWriting } = useWriteContract();
 
+  const { agents } = useAgents({ size: 100 });
+  // Agents owned by the connected wallet (agentId binds to wallet owner).
+  const myAgents = agents.filter(
+    (a) => a.owner.toLowerCase() === (address ?? "").toLowerCase()
+  );
+
   const [agentId, setAgentId] = useState(initialAgent);
+  // deadline stored as a datetime-local string; converted to epoch seconds on submit.
   const [deadline, setDeadline] = useState("");
   const [amount, setAmount] = useState("");
   const [minProviderReputation, setMinProviderReputation] = useState("");
@@ -57,6 +67,8 @@ function NewJobBody() {
   const [error, setError] = useState<string | null>(null);
   const [stepLabel, setStepLabel] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<`0x${string}` | null>(null);
+  const [nlInput, setNlInput] = useState("");
+  const [nlApplied, setNlApplied] = useState(false);
 
   const { isLoading: isConfirming } = useWaitForTransactionReceipt({
     hash: txHash ?? undefined,
@@ -89,6 +101,35 @@ function NewJobBody() {
   const ready = contractsReady() && JOB_CONTRACT_ADDRESS !== undefined;
   const wrongChain = chain && chain.id !== monadTestnet.id;
   const blocked = decision === "deny";
+
+  // Auto-pick the first wallet-owned agent once the wallet connects.
+  useEffect(() => {
+    if (address && myAgents.length > 0 && !agentId) {
+      setAgentId(myAgents[0].agent_id);
+    }
+  }, [address, myAgents]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Parse the natural-language request and map it onto the form fields.
+  function applyNaturalLanguage() {
+    const parsed = parseNaturalLanguage(nlInput);
+    if (parsed.amount) setAmount(parsed.amount);
+    if (parsed.currency) setCurrency(parsed.currency);
+    if (parsed.minRep) setMinProviderReputation(parsed.minRep);
+    if (parsed.deadlineIn) {
+      const d = new Date(Date.now() + parsed.deadlineIn * 86400_000);
+      const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+      setDeadline(local);
+    }
+    if (parsed.agentTag) {
+      const tag = parsed.agentTag;
+      const matched =
+        myAgents.find((a) => agentCategory(a.metadata).toLowerCase() === tag) ??
+        myAgents[0];
+      if (matched) setAgentId(matched.agent_id);
+    }
+    setNlApplied(true);
+  }
+
   // Human-friendly amounts: parseUnits converts "100" / "0.5" to wei (18 decimals).
   // Returns -1n for invalid input so callers can surface an error.
   const parseAmount = (v: string): bigint => {
@@ -157,7 +198,9 @@ function NewJobBody() {
       setError("Invalid Agent ID.");
       return;
     }
-    const deadlineBig = BigInt(deadline);
+    const deadlineBig = deadline
+      ? BigInt(Math.floor(new Date(deadline).getTime() / 1000))
+      : 0n;
     if (deadlineBig <= BigInt(Math.floor(Date.now() / 1000))) {
       setError("Deadline must be in the future.");
       return;
@@ -260,18 +303,67 @@ function NewJobBody() {
           Trust gate checks agent reputation before creation. Funding uses ERC-20 transferFrom.
         </p>
 
-        <form onSubmit={handleSubmit} className="mt-8 space-y-6">
-          {/* Agent selector */}
-          <div>
-            <label className="mb-1.5 block text-sm font-medium text-white/80">Agent ID</label>
+        {/* Natural-language quick input */}
+        <div className="mt-6 rounded-lg border border-prism-accent/30 bg-prism-accent/5 p-4">
+          <label className="mb-1.5 block text-sm font-medium text-white/80">
+            Describe the job in plain words
+            <span className="ml-2 text-xs font-normal text-white/40">— auto-fills the form below</span>
+          </label>
+          <div className="flex gap-2">
             <input
               type="text"
-              required
-              value={agentId}
-              onChange={(e) => setAgentId(e.target.value)}
-              placeholder="0x… or decimal agent id"
-              className="w-full rounded-lg border border-white/10 bg-prism-surface/60 px-3 py-2 font-mono text-sm text-white placeholder:text-white/30 focus:border-prism-accent focus:outline-none"
+              value={nlInput}
+              onChange={(e) => setNlInput(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), applyNaturalLanguage())}
+              placeholder='e.g. 帮我创建 5 USDC 的任务给做数据标注的 agent，3 天内完成，最低信誉 0.5'
+              className="flex-1 rounded-lg border border-white/10 bg-black/30 px-3 py-2 text-sm text-white placeholder:text-white/30 focus:border-prism-accent focus:outline-none"
             />
+            <button
+              type="button"
+              onClick={applyNaturalLanguage}
+              className="shrink-0 rounded-lg bg-prism-accent px-4 py-2 text-sm font-medium text-black hover:bg-prism-accent/80"
+            >
+              Apply
+            </button>
+          </div>
+          {nlApplied && (
+            <p className="mt-2 text-[11px] text-emerald-400">Applied — review the fields below before submitting.</p>
+          )}
+        </div>
+
+        <form onSubmit={handleSubmit} className="mt-8 space-y-6">
+          {/* Agent selector — bound to the connected wallet */}
+          <div>
+            <label className="mb-1.5 block text-sm font-medium text-white/80">
+              Agent <span className="text-white/40">(your registered agents)</span>
+            </label>
+            {address ? (
+              myAgents.length > 0 ? (
+                <select
+                  required
+                  value={agentId}
+                  onChange={(e) => setAgentId(e.target.value)}
+                  className="w-full rounded-lg border border-white/10 bg-prism-surface/60 px-3 py-2 font-mono text-sm text-white focus:border-prism-accent focus:outline-none"
+                >
+                  {myAgents.map((a) => (
+                    <option key={a.agent_id} value={a.agent_id} className="bg-zinc-900">
+                      {a.agent_id.length > 20 ? `${a.agent_id.slice(0, 14)}…${a.agent_id.slice(-6)}` : a.agent_id}
+                      {a.score && a.score !== "0" ? ` · ${(Number(BigInt(a.score)) / 1e18).toFixed(2)} rep` : " · new"}
+                      {a.metadata ? ` · ${agentCategory(a.metadata)}` : ""}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-300">
+                  This wallet has no registered agent yet. Register one on the{" "}
+                  <a href="/agents" className="underline">Agents page</a> to create jobs.
+                </div>
+              )
+            ) : (
+              <p className="rounded-lg border border-white/10 bg-prism-surface/60 p-3 text-sm text-white/50">
+                Connect your wallet to see the agents bound to it.
+              </p>
+            )}
             {agentId && (
               <div className="mt-3">
                 <TrustGate agentId={agentId} onDecisionChange={setDecision} />
@@ -364,19 +456,20 @@ function NewJobBody() {
             )}
           </div>
 
-          {/* Deadline */}
+          {/* Deadline — calendar picker */}
           <div>
-            <label className="mb-1.5 block text-sm font-medium text-white/80">Deadline (epoch seconds)</label>
+            <label className="mb-1.5 block text-sm font-medium text-white/80">
+              Deadline <span className="text-white/40">(pick date &amp; time)</span>
+            </label>
             <input
-              type="number"
+              type="datetime-local"
               required
               value={deadline}
               onChange={(e) => setDeadline(e.target.value)}
-              placeholder={String(Math.floor(Date.now() / 1000) + 3600)}
-              className="w-full rounded-lg border border-white/10 bg-prism-surface/60 px-3 py-2 font-mono text-sm text-white placeholder:text-white/30 focus:border-prism-accent focus:outline-none"
+              className="w-full rounded-lg border border-white/10 bg-prism-surface/60 px-3 py-2 text-sm text-white focus:border-prism-accent focus:outline-none"
             />
+            <p className="mt-1 text-[11px] text-white/40">Converted to epoch seconds on-chain (e.g. tomorrow 14:00).</p>
           </div>
-
           {/* Min Provider Reputation */}
           <div>
             <label className="mb-1.5 block text-sm font-medium text-white/80">
@@ -428,7 +521,7 @@ function NewJobBody() {
             </button>
             {blocked && (
               <span className="text-xs text-red-400">
-                Blocked by TrustGate (FR-AP13): agent score below deny threshold.
+                Blocked by TrustGate: agent score below the deny threshold.
               </span>
             )}
           </div>

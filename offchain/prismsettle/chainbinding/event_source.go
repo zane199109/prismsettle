@@ -89,7 +89,7 @@ func (s *ChainEventSource) RecentDisputed(ctx context.Context, since time.Time, 
 		limit = 20
 	}
 	events, _, err := s.repo.GetPrismEvents(
-		ctx, s.cfg.ChainName, s.cfg.HookContract, "", 1, limit,
+		ctx, s.cfg.ChainName, s.cfg.HookContract, "", "", 0, 1, limit,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("query disputed events: %w", err)
@@ -129,7 +129,7 @@ func (s *ChainEventSource) RecentDisputed(ctx context.Context, since time.Time, 
 // assigned".
 func (s *ChainEventSource) ProviderFor(ctx context.Context, jobID string) (string, error) {
 	events, _, err := s.repo.GetPrismEvents(
-		ctx, s.cfg.ChainName, s.cfg.JobContract, jobID, 1, 50,
+		ctx, s.cfg.ChainName, s.cfg.JobContract, jobID, "", 0, 1, 50,
 	)
 	if err != nil {
 		return "", fmt.Errorf("query assigned events: %w", err)
@@ -146,7 +146,7 @@ func (s *ChainEventSource) ProviderFor(ctx context.Context, jobID string) (strin
 // event (From = buyer per prismsettle_job_parser.go).
 func (s *ChainEventSource) buyerFor(ctx context.Context, jobID string) string {
 	events, _, err := s.repo.GetPrismEvents(
-		ctx, s.cfg.ChainName, s.cfg.JobContract, jobID, 1, 50,
+		ctx, s.cfg.ChainName, s.cfg.JobContract, jobID, "", 0, 1, 50,
 	)
 	if err != nil {
 		return ""
@@ -240,7 +240,7 @@ func (s *ChainEventSource) CurrentScore(ctx context.Context, agentID *big.Int) (
 	// Fallback: read the latest Aggregated event for this agent.
 	agentHex := toUint256Hex(agentID)
 	events, _, err := s.repo.GetPrismEvents(
-		ctx, s.cfg.ChainName, s.cfg.RegContract, agentHex, 1, 1,
+		ctx, s.cfg.ChainName, s.cfg.RegContract, agentHex, "", 0, 1, 1,
 	)
 	if err != nil {
 		return 0, fmt.Errorf("event_source: query aggregated events: %w", err)

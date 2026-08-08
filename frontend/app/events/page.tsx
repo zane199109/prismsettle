@@ -29,7 +29,9 @@ import {
 } from "@/components/ui/table";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useEvents } from "@/hooks/useEvents";
-import { cn, formatAgentId, formatTime } from "@/lib/utils";
+import { cn, formatAgentId, formatScore, formatTime, tokenDecimals } from "@/lib/utils";
+import { formatUnits } from "viem";
+import type { ChainEvent } from "@/lib/types";
 
 const EVENT_TYPES = [
   { value: "all", label: "All events" },
@@ -44,10 +46,15 @@ const EVENT_TYPES = [
   { value: "PRISM_JOB_FUNDED", label: "Job Funded" },
   { value: "PRISM_JOB_ASSIGNED", label: "Job Assigned" },
   { value: "PRISM_JOB_SUBMITTED", label: "Job Submitted" },
+  { value: "PRISM_JOB_REJECTED", label: "Job Rejected" },
   { value: "PRISM_JOB_COMPLETED", label: "Job Completed" },
   { value: "PRISM_JOB_REFUNDED", label: "Job Refunded" },
   { value: "PRISM_DISPUTED", label: "Disputed" },
+  { value: "PRISM_ARBITRATOR_SELECTED", label: "Arbitrator Selected" },
   { value: "PRISM_DISPUTE_RESOLVED", label: "Dispute Resolved" },
+  { value: "PRISM_DISPUTE_RESOLVED_ANNOUNCED", label: "Resolution Announced" },
+  { value: "PRISM_ARBITRATION_EXECUTED", label: "Arbitration Executed" },
+  { value: "PRISM_ARBITRATOR_REGISTERED", label: "Arbitrator Registered" },
 ];
 
 const PAGE_SIZE = 30;
@@ -59,6 +66,33 @@ function isReorged(extra: string): boolean {
     return Boolean(obj.reorged);
   } catch {
     return false;
+  }
+}
+
+// Token contract address → human label.
+function tokenLabel(addr: string | undefined): string {
+  if (!addr) return "tokens";
+  const a = addr.toLowerCase();
+  if (a === "0x252e44550f8b9997901e5540fc0e1da52ab099c6") return "USDC";
+  if (a === "0x2bb06a30d464ca8e62563081f024e6380f0eb70b") return "USDC";
+  if (a === "0xfb8bf4c1cc7a94c73d209a149ea2abea852bc541") return "WMON";
+  return "tokens";
+}
+
+// Events whose `value` is a 1e18 reputation score, not a token amount.
+const SCORE_EVENTS = new Set(["PRISM_AGGREGATED", "PRISM_VALIDATION_SUBMITTED", "PRISM_SLASHED"]);
+
+// Human-readable value: reputation events → "0.75"; amount events → "100 USDC".
+function formatEventValue(e: ChainEvent): string {
+  if (!e.value || e.value === "0") return "—";
+  if (SCORE_EVENTS.has(e.event_type)) {
+    return formatScore(e.value);
+  }
+  try {
+    const amt = formatUnits(BigInt(e.value), tokenDecimals(e.token_address));
+    return `${amt} ${tokenLabel(e.token_address)}`;
+  } catch {
+    return e.value;
   }
 }
 
@@ -177,7 +211,7 @@ export default function EventsPage() {
                           {formatAgentId(e.to)}
                         </TableCell>
                         <TableCell className="font-mono text-xs text-white/70">
-                          {e.value || "—"}
+                          {formatEventValue(e)}
                         </TableCell>
                         <TableCell className="font-mono text-[11px] text-white/50">
                           <a

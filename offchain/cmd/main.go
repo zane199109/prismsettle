@@ -90,6 +90,7 @@ func main() {
 	trustThresholdRepo := repository.NewTrustThresholdRepository(pgStorage.DB())
 	reorgEventRepo := repository.NewReorgEventRepository(pgStorage.DB()) // Phase 9 task 9.4
 	perfResultRepo := repository.NewPerfResultRepository(pgStorage.DB()) // Phase 9 task 9.6
+	grabAttemptRepo := repository.NewGrabAttemptRepository(pgStorage.DB())
 
 	// 7. create a root context for the entire application lifecycle
 	rootCtx, rootCancel := context.WithCancel(context.Background())
@@ -111,8 +112,22 @@ func main() {
 	erc20Service := service.NewERC20Service(chainEventRepo, redisStorage, syncStateService)
 	prismService := prism_svc.NewPrismSettleServiceWithPerfRepos(
 		chainEventRepo, agentRegistryRepo, trustThresholdRepo,
-		reorgEventRepo, perfResultRepo,
+		reorgEventRepo, perfResultRepo, grabAttemptRepo,
 	)
+
+	// Wire the live on-chain score fetcher: seed agents hold their score in
+	// the registry contract but emit no aggregation event, so listAgents
+	// falls back to an eth_call when the DB has nothing.
+	for _, chain := range config.Cfg.Web3.Chains {
+		if len(chain.RPCUrls) > 0 && chain.ContractAddr != "" {
+			if fetcher, err := prism_svc.NewScoreFetcher(chain.RPCUrls[0], chain.ContractAddr); err == nil {
+				prismService.SetScoreFetcher(fetcher)
+				defer fetcher.Close()
+				logger.Info("score fetcher wired", logger.String("chain", chain.ChainName))
+				break
+			}
+		}
+	}
 
 	// Allow PRISM_EVALUATOR_KEY env var to override the yaml config value.
 	// This lets us keep the private key out of the version-controlled config file.

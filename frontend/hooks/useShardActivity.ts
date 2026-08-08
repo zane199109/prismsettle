@@ -42,7 +42,14 @@ export function useShardActivity(
     chainName !== null ? `shard-activity:${chainName ?? "all"}` : null,
     async () => {
       const res = await getShardActivity(chainName);
-      return res ?? [];
+      // Normalize the backend shape ({chain_name, count, shards:[...]} with
+      // validations/last_activity fields) into the typed ShardActivity array.
+      const shards = Array.isArray(res) ? res : (res?.shards ?? []);
+      return shards.map((r) => ({
+        shard_id: Number(r.shard_id ?? 0),
+        validation_count: Number((r as Record<string, unknown>).validations ?? 0),
+        last_active_at: Number((r as Record<string, unknown>).last_activity ?? 0),
+      }));
     },
     { intervalMs, pauseWhenHidden: true },
   );

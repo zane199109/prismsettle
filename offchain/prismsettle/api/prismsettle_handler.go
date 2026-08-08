@@ -74,6 +74,11 @@ func (h *PrismSettleHandler) RegisterRoutes(v1 *gin.RouterGroup) {
 
 		// Agent invoke proxy (FR-M11).
 		g.POST("/agent/invoke", h.invokeAgent)
+
+		// Grab attempts: agents report grab outcomes (success/failure+reason)
+		// so operators can see why they lost a job competition.
+		g.POST("/grab-attempts", h.recordGrabAttempt)
+		g.GET("/grab-attempts", h.listGrabAttempts)
 	}
 }
 
@@ -85,6 +90,8 @@ type prismEventsQuery struct {
 	ChainName    string `form:"chainName" binding:"required" validate:"required"`
 	ContractAddr string `form:"contract" validate:"omitempty,eth_addr"`
 	AgentID      string `form:"agentId"`
+	EventType    string `form:"eventType"` // optional: exact event_type filter
+	MinID        uint64 `form:"minId"`     // optional: incremental cursor (id > minId)
 	Page         int    `form:"page" default:"1" validate:"required,min=1"`
 	Size         int    `form:"size" default:"20" validate:"required,min=1,max=100"`
 }
@@ -170,6 +177,8 @@ func (h *PrismSettleHandler) getEvents(c *gin.Context) {
 		req.ChainName,
 		req.ContractAddr,
 		req.AgentID,
+		req.EventType,
+		req.MinID,
 		req.Page,
 		req.Size,
 	)
@@ -495,7 +504,7 @@ func (h *PrismSettleHandler) getPerfComparison(c *gin.Context) {
 // Phase 9: reads from reorg_events table; returns empty list when no
 // reorgs have been detected yet.
 func (h *PrismSettleHandler) getReorgFeed(c *gin.Context) {
-	chainName := c.Query("chain_name")
+	chainName := c.Query("chainName")
 	limit := 50
 	if v, err := strconv.Atoi(c.Query("limit")); err == nil && v > 0 && v <= 200 {
 		limit = v
@@ -570,4 +579,68 @@ func (h *PrismSettleHandler) invokeAgent(c *gin.Context) {
 	}
 	// Stream the upstream response back as-is (preserve JSON-RPC envelope).
 	c.Data(resp.StatusCode, "application/json", respBody)
+}
+
+// -----------------------------------------------------------------------------
+// grab-attempts — agents report grab outcomes for competition visibility
+// -----------------------------------------------------------------------------
+
+type grabAttemptReq struct {
+	ChainName   string `json:"chain_name" binding:"required"`
+	AgentID     string `json:"agent_id" binding:"required"`
+	JobID       string `json:"job_id" binding:"required"`
+	Success     bool   `json:"success"`
+	Reason      string `json:"reason"`
+	BlockNumber uint64 `json:"block_number"`
+}
+
+func (h *PrismSettleHandler) recordGrabAttempt(c *gin.Context) {
+	var req grabAttemptReq
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.HandleError(c, errno.ErrInvalidParam)
+		return
+	}
+	att := &model.GrabAttempt{
+		ChainName:   req.ChainName,
+		AgentID:     strings.ToLower(req.AgentID),
+		JobID:       strings.ToLower(req.JobID),
+		Success:     req.Success,
+		Reason:      req.Reason,
+		BlockNumber: req.BlockNumber,
+	}
+	if err := h.svc.RecordGrabAttempt(c.Request.Context(), att); err != nil {
+		response.HandleError(c, err)
+		return
+	}
+	response.Success(c, gin.H{"id": att.ID})
+}
+
+type grabAttemptsQuery struct {
+	ChainName string `form:"chainName"`
+	AgentID   string `form:"agentId"`
+	JobID     string `form:"jobId"`
+	Page      int    `form:"page" default:"1"`
+	Size      int    `form:"size" default:"20"`
+}
+
+func (h *PrismSettleHandler) listGrabAttempts(c *gin.Context) {
+	var q grabAttemptsQuery
+	if err := c.ShouldBindQuery(&q); err != nil {
+		response.HandleError(c, errno.ErrInvalidParam)
+		return
+	}
+	page := q.Page
+	if page < 1 {
+		page = 1
+	}
+	size := q.Size
+	if size < 1 || size > 100 {
+		size = 20
+	}
+	list, total, err := h.svc.ListGrabAttempts(c.Request.Context(), q.ChainName, q.AgentID, q.JobID, page, size)
+	if err != nil {
+		response.HandleError(c, err)
+		return
+	}
+	response.Success(c, gin.H{"list": list, "total": total, "page": page, "size": size})
 }

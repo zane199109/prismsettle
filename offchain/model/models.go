@@ -76,6 +76,8 @@ type ChainEvent struct {
 	TxType    string `gorm:"index;size:16" json:"tx_type"`            // native / token
 	// Core fields
 	EventType   EventType `gorm:"index;notnull;size:32" json:"event_type"`                         // Distinguishes event types, customized per contract
+	JobID       string    `gorm:"size:96;index" json:"job_id"`                                     // PrismSettle: jobId (0x-hex) when the event is job-scoped (validation, escrow ops); empty otherwise
+	Metadata    string    `gorm:"type:text" json:"metadata"`                                       // AgentRegistered raw metadata string (JSON); empty otherwise
 	TokenAddr   string    `gorm:"size:96;index" json:"token_address"`                              // Token address (ERC20) or auxiliary hash field (PrismSettle: proofHash / deliverableHash / hook / reasonHash)
 	From        string    `gorm:"size:96;index" json:"from"`                                       // Outgoing address
 	To          string    `gorm:"size:96;index" json:"to"`                                         // Incoming address
@@ -90,6 +92,19 @@ type ChainEvent struct {
 	Status      uint8     `gorm:"index;default:1" json:"status"`                                   // 1=Success, 0=Failed
 	CreatedAt   time.Time `gorm:"type:timestamp;autoCreateTime" json:"created_at"`
 	UpdatedAt   time.Time `gorm:"type:timestamp;autoUpdateTime" json:"updated_at"`
+}
+
+// GrabAttempt records an agent's job-grab attempt (success or failure) with
+// the reason, so operators can see why they lost a job competition.
+type GrabAttempt struct {
+	ID          uint64    `gorm:"primaryKey;autoIncrement" json:"id"`
+	ChainName   string    `gorm:"size:32;index" json:"chain_name"`
+	AgentID     string    `gorm:"size:96;index" json:"agent_id"` // hex uint256
+	JobID       string    `gorm:"size:96;index" json:"job_id"`   // hex uint256
+	Success     bool      `gorm:"index" json:"success"`
+	Reason      string    `gorm:"size:255" json:"reason"` // human-readable failure reason
+	BlockNumber uint64    `json:"block_number"`
+	CreatedAt   time.Time `gorm:"type:timestamp;autoCreateTime" json:"created_at"`
 }
 
 type ChainBlockState struct {
@@ -218,6 +233,7 @@ func ConvertToERC20TransferVO(e ChainEvent) *ERC20TransferVO {
 // PrismSettleEventVO is the API view object for PrismSettle registry events.
 // agentId is decoded from the stored `To` hex field.
 type PrismSettleEventVO struct {
+	ID          uint64 `json:"id"` // DB id — incremental cursor for consumers
 	TxHash      string `json:"tx_hash"`
 	BlockNumber uint64 `json:"block_number"`
 	BlockTime   uint64 `json:"block_time"`
@@ -226,6 +242,9 @@ type PrismSettleEventVO struct {
 	Actor       string `json:"actor"` // validator or agent owner
 	Value       string `json:"value"` // score / amount / newScore
 	Contract    string `json:"contract"`
+	JobID       string `json:"job_id"` // job events: hex uint256
+	From        string `json:"from"`   // raw operator address
+	To          string `json:"to"`     // raw target (jobId / agentId hex)
 }
 
 // PrismSettleScoreVO is the API view object for an agent's latest score.
@@ -240,6 +259,7 @@ type PrismSettleScoreVO struct {
 // API view. The `To` field holds the agentId hex, `From` holds the actor.
 func ConvertToPrismSettleEventVO(e ChainEvent) *PrismSettleEventVO {
 	return &PrismSettleEventVO{
+		ID:          e.ID,
 		TxHash:      e.TxHash,
 		BlockNumber: e.BlockNumber,
 		BlockTime:   e.BlockTime,
@@ -248,6 +268,9 @@ func ConvertToPrismSettleEventVO(e ChainEvent) *PrismSettleEventVO {
 		Actor:       e.From,
 		Value:       e.Value,
 		Contract:    e.Contract,
+		JobID:       e.JobID,
+		From:        e.From,
+		To:          e.To,
 	}
 }
 

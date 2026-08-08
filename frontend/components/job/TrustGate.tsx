@@ -138,14 +138,14 @@ const TONE: Record<
     bg: "bg-amber-500/5",
     text: "text-amber-400",
     hint:
-      "FR-AP12: score is in the review band. A validation hook will be mounted before funding — proceed with caution.",
+      "Score is in the review band. A validation hook will be mounted before funding — proceed with caution.",
   },
   deny: {
     border: "border-red-500/40",
     bg: "bg-red-500/5",
     text: "text-red-400",
     hint:
-      "FR-AP13: score is below the deny threshold. createJob is blocked until the agent's reputation recovers.",
+      "Score is below the deny threshold. createJob is blocked until the agent's reputation recovers.",
   },
 };
 

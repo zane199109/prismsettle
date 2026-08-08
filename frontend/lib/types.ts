@@ -21,6 +21,7 @@ export interface JobVO {
   created_at: number;
   updated_at: number;
   amount?: string; // Escrow amount (token value string)
+  token?: string; // Escrow token contract address
   provider?: string; // Provider address (assigned via grabJob)
 }
 

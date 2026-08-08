@@ -45,6 +45,9 @@ contract PrismSettleJobTest is Test {
 
         // Deploy a real registry and register the provider agent.
         registry = new PrismSettleRegistry();
+        // AGENT_PROVIDER is owned by the provider wallet (grabJob requires
+        // caller == agent owner or delegated operator).
+        vm.prank(provider);
         registry.registerAgent(AGENT_PROVIDER, '{"endpointUrl":"","capabilities":"provider"}');
         registry.seedAgent(AGENT_PROVIDER, uint96(0.7e18));
 
@@ -718,6 +721,18 @@ contract PrismSettleJobTest is Test {
 
         vm.prank(buyer);
         vm.expectRevert("PrismSettle: self-dealing");
+        job.grabJob(jobId, AGENT_PROVIDER);
+    }
+
+    // ------------------------------------------------------------------
+    // grabJob — autonomy (only the agent owner may claim jobs)
+    // ------------------------------------------------------------------
+
+    function testGrabJobRevertsUnauthorizedCaller() public {
+        uint256 jobId = _createAndFund();
+        address stranger = address(0xBEEF);
+        vm.prank(stranger);
+        vm.expectRevert("PrismSettle: not owner");
         job.grabJob(jobId, AGENT_PROVIDER);
     }
 

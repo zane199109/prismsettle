@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Pagination } from "@/components/ui/pagination";
 import {
   Select,
   SelectContent,
@@ -29,6 +30,8 @@ import {
   gradeColor,
   gradeFromScore,
   agentCategory,
+  agentDisplayName,
+  agentDescription,
   AGENT_CATEGORIES,
 } from "@/lib/utils";
 import type { AgentVO } from "@/lib/types";
@@ -40,7 +43,9 @@ export default function AgentMarketplacePage() {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("score");
   const [category, setCategory] = useState<CategoryFilter>("All");
-  const { agents, total, isValidating } = useAgents({ size: 50, intervalMs: 10000 });
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 12;
+  const { agents, total, isValidating } = useAgents({ page, size: PAGE_SIZE, intervalMs: 10000 });
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -132,12 +137,14 @@ export default function AgentMarketplacePage() {
           </div>
         )}
 
+        <Pagination page={page} size={PAGE_SIZE} total={total} onPageChange={setPage} />
+
         {/* 8.8: Agent register form (FR-M06) */}
         <Card className="mt-8 border-white/10 bg-prism-surface/40">
           <details id="register-agent-form">
             <summary className="flex cursor-pointer items-center gap-2 p-5 text-sm font-medium text-white">
               <UserPlus className="h-4 w-4 text-prism-accent" />
-              Register a new agent (FR-M06)
+              Register a new agent
             </summary>
             <div className="border-t border-white/10 p-5">
               <AgentRegisterForm />
@@ -150,8 +157,9 @@ export default function AgentMarketplacePage() {
 }
 
 function AgentCard({ agent }: { agent: AgentVO }) {
-  const grade = gradeFromScore(agent.score);
-  const score = formatScore(agent.score);
+  const hasScore = Boolean(agent.score) && agent.score !== "0";
+  const grade = hasScore ? gradeFromScore(agent.score) : null;
+  const score = hasScore ? formatScore(agent.score) : null;
   return (
     <Link
       href={`/agents/${encodeURIComponent(agent.agent_id)}`}
@@ -161,29 +169,52 @@ function AgentCard({ agent }: { agent: AgentVO }) {
         <CardContent className="p-5">
           <div className="flex items-start justify-between">
             <div className="min-w-0">
-              <div className="truncate font-mono text-sm text-white">
+              <div className="truncate text-sm font-semibold text-white">
+                {agentDisplayName(agent.metadata)}
+              </div>
+              <div className="mt-0.5 truncate font-mono text-xs text-white/40">
                 {formatAgentId(agent.agent_id)}
               </div>
-              <div className="mt-1 truncate text-xs text-white/40">
-                owner {formatAgentId(agent.owner)}
-              </div>
             </div>
-            <Badge
-              variant="outline"
-              className={cn("font-mono text-xs font-bold", gradeColor(grade))}
-            >
-              {grade}
-            </Badge>
+            {hasScore ? (
+              <Badge
+                variant="outline"
+                className={cn("font-mono text-xs font-bold", gradeColor(grade!))}
+              >
+                {grade}
+              </Badge>
+            ) : (
+              <Badge variant="outline" className="font-mono text-xs text-white/40">
+                new
+              </Badge>
+            )}
           </div>
           <div className="mt-4 flex items-baseline gap-2">
-            <span className="font-mono text-2xl font-bold text-white">{score}</span>
-            <span className="text-xs text-white/40">reputation score</span>
+            {hasScore ? (
+              <>
+                <span className="font-mono text-2xl font-bold text-white">{score}</span>
+                <span className="text-xs text-white/40">reputation score</span>
+              </>
+            ) : (
+              <span className="text-sm text-white/50">pending validation</span>
+            )}
           </div>
-          {agent.endpoint && (
-            <div className="mt-3 truncate text-xs text-prism-accent/80">
-              ↗ {agent.endpoint}
-            </div>
-          )}
+          <div className="mt-3 flex items-center gap-2">
+            <Badge
+              variant="outline"
+              className="border-prism-accent/30 bg-prism-accent/10 text-[10px] font-medium text-prism-accent"
+            >
+              {agentCategory(agent.metadata)}
+            </Badge>
+            {agent.endpoint && (
+              <div className="truncate text-xs text-prism-accent/80">
+                ↗ {agent.endpoint}
+              </div>
+            )}
+          </div>
+          <div className="mt-2 line-clamp-2 text-[11px] leading-relaxed text-white/40">
+            {agentDescription(agent.metadata)}
+          </div>
           <div className="mt-3 text-[11px] text-white/30">
             registered at block {agent.block_number}
           </div>

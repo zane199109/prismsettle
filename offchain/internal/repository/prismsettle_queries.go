@@ -23,9 +23,15 @@ var prismEventTypes = []string{
 // GetPrismEvents returns paginated PrismSettle registry events for an agent.
 // agentId is matched against the `To` column (where the parser stores the
 // agentId hex). When agentId is empty, all PrismSettle events are returned.
+//
+// Two access modes:
+//   - minID > 0: incremental cursor mode — returns events with id > minID
+//     ordered by id ASC (used by worker agents to consume new events).
+//   - minID == 0: page mode — ordered by block_number DESC, log_index DESC.
 func (r *ChainEventRepository) GetPrismEvents(
 	ctx context.Context,
-	chainName, contractAddr, agentID string,
+	chainName, contractAddr, agentID, eventType string,
+	minID uint64,
 	page, size int,
 ) ([]model.ChainEvent, int64, error) {
 	var (
@@ -48,7 +54,15 @@ func (r *ChainEventRepository) GetPrismEvents(
 		query = query.Where("LOWER(\"to\") = ?", strings.ToLower(agentID))
 	}
 
-	query = query.Where("event_type IN (?)", prismEventTypes)
+	if eventType != "" {
+		query = query.Where("event_type = ?", eventType)
+	} else {
+		query = query.Where("event_type IN (?)", prismEventTypes)
+	}
+
+	if minID > 0 {
+		query = query.Where("id > ?", minID)
+	}
 
 	if err := query.Count(&total).Error; err != nil {
 		logger.Errorf("repo count prism events failed", logger.Error(err))
@@ -56,14 +70,27 @@ func (r *ChainEventRepository) GetPrismEvents(
 	}
 
 	offset := (page - 1) * size
-	err := query.
-		Order("block_number DESC, log_index DESC").
-		Offset(offset).
-		Limit(size).
-		Find(&list).Error
-	if err != nil {
-		logger.Errorf("repo get prism events failed", logger.Error(err))
-		return nil, 0, errno.ErrInternal
+	if minID > 0 {
+		// Incremental mode: ascending id order so consumers can walk the
+		// stream forward; total reflects remaining events after minID.
+		err := query.Order("id ASC").
+			Offset(offset).
+			Limit(size).
+			Find(&list).Error
+		if err != nil {
+			logger.Errorf("repo get prism events failed", logger.Error(err))
+			return nil, 0, errno.ErrInternal
+		}
+	} else {
+		err := query.
+			Order("block_number DESC, log_index DESC").
+			Offset(offset).
+			Limit(size).
+			Find(&list).Error
+		if err != nil {
+			logger.Errorf("repo get prism events failed", logger.Error(err))
+			return nil, 0, errno.ErrInternal
+		}
 	}
 
 	return list, total, nil
@@ -132,10 +159,14 @@ var prismJobEventTypes = []string{
 	string(model.TypePrismJobFunded),
 	string(model.TypePrismJobAssigned),
 	string(model.TypePrismJobSubmitted),
+	string(model.TypePrismJobRejected),
 	string(model.TypePrismJobCompleted),
 	string(model.TypePrismJobRefunded),
 	string(model.TypePrismDisputed),
+	string(model.TypePrismArbitratorSelected),
 	string(model.TypePrismDisputeResolved),
+	string(model.TypePrismDisputeResolvedAnnounced),
+	string(model.TypePrismArbitrationExecuted),
 }
 
 // ListPrismJobs returns paginated PrismSettleJob lifecycle events, optionally

@@ -31,14 +31,14 @@ export function getAgent(agentId: string, chainName?: string) {
   return api.get<AgentVO>(`/agents/${encodeURIComponent(agentId)}`, { chainName });
 }
 
-// FR-A08: GET /jobs
+// FR-A08: GET /jobs — backend returns the PRISM_JOB_* event stream.
 export function listJobs(params: {
   chainName?: string;
-  state?: string;
+  contract?: string;
   page?: number;
   size?: number;
 }) {
-  return getPaginated<JobVO>("/jobs", params);
+  return getPaginated<ChainEvent>("/jobs", params);
 }
 
 // FR-A09: GET /jobs/:jobId/status
@@ -49,9 +49,14 @@ export function getJobStatus(jobId: string, chainName?: string) {
   );
 }
 
-// FR-JM02: GET /jobs/:jobId/timeline
+// FR-JM02: GET /jobs/:jobId/timeline — backend returns {job_id, events, count}.
+export interface JobTimelineResponse {
+  job_id: string;
+  events: ChainEvent[];
+  count: number;
+}
 export function getJobTimeline(jobId: string, chainName?: string) {
-  return api.get<JobTimelineItem[]>(
+  return api.get<JobTimelineResponse>(
     `/jobs/${encodeURIComponent(jobId)}/timeline`,
     { chainName },
   );
@@ -76,7 +81,7 @@ export function setTrustThreshold(body: TrustThreshold) {
 // in `symbol` (0=Validator, 1=Evaluator, 2=Arbitration) — see
 // offchain/model/models.go and the listener parser.
 export interface ReputationHistoryResponse {
-  agentId: string;
+  agent_id: string;
   events: ChainEvent[];
   count: number;
 }
@@ -91,13 +96,23 @@ export function getReputationHistory(params: {
 }
 
 // FR-A04: GET /shards/activity
+// Backend returns {chain_name, count, shards: [{shard_id, validations, last_activity}]}.
+export interface ShardActivityResponse {
+  chain_name?: string;
+  count?: number;
+  shards?: ShardActivity[];
+}
 export function getShardActivity(chainName?: string) {
-  return api.get<ShardActivity[]>("/shards/activity", { chainName });
+  return api.get<ShardActivityResponse>("/shards/activity", { chainName });
 }
 
-// Perf: GET /perf/reorg-feed — Phase 9 wires this to the reorg-aware feed.
+// Perf: GET /perf/reorg-feed — backend returns {items, count}.
+export interface ReorgFeedResponse {
+  items: ChainEvent[];
+  count: number;
+}
 export function getReorgFeed(chainName?: string, limit?: number) {
-  return api.get<ChainEvent[]>("/perf/reorg-feed", {
+  return api.get<ReorgFeedResponse>("/perf/reorg-feed", {
     chainName,
     limit,
   });
@@ -106,7 +121,8 @@ export function getReorgFeed(chainName?: string, limit?: number) {
 // Existing endpoints (Phase 5/6).
 export function getEvents(params: {
   chainName?: string;
-  event_type?: string;
+  eventType?: string; // backend binds form:"eventType" (camelCase)
+  agentId?: string; // matches ChainEvent.to (hex agentId/jobId)
   page?: number;
   size?: number;
 }) {
@@ -114,7 +130,7 @@ export function getEvents(params: {
 }
 
 export function getScore(agentId: string, chainName?: string) {
-  return api.get<{ agentId: string; score: string }>("/score", {
+  return api.get<{ agent_id: string; score: string }>("/score", {
     agentId,
     chainName,
   });
@@ -124,14 +140,38 @@ export function countValidations(chainName?: string) {
   return api.get<ValidationCount>("/validations/count", { chainName });
 }
 
+// Grab attempts: agents report grab outcomes (success/failure+reason) so
+// operators can see why they lost a job competition.
+export interface GrabAttempt {
+  id: number;
+  chain_name: string;
+  agent_id: string;
+  job_id: string;
+  success: boolean;
+  reason: string;
+  block_number: number;
+  created_at: string;
+}
+
+export function listGrabAttempts(params: {
+  chainName?: string;
+  agentId?: string;
+  jobId?: string;
+  page?: number;
+  size?: number;
+}) {
+  return api.get<{ list: GrabAttempt[]; total: number; page: number; size: number }>(
+    "/grab-attempts",
+    params
+  );
+}
+
 // FR-M11: POST /agent/invoke — proxy to an external agent endpoint.
+// Backend binds json tags agent_id/method/params.
 export function invokeAgent(body: {
-  agentId: string;
+  agent_id: string;
   method: string;
   params?: unknown;
 }) {
-  return api.post<{ result: unknown; decision_id: string }>(
-    "/agent/invoke",
-    body,
-  );
+  return api.post<{ result: unknown }>("/agent/invoke", body);
 }

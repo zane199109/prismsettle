@@ -23,6 +23,9 @@ import {
   formatTime,
   gradeColor,
   gradeFromScore,
+  agentCategory,
+  agentDisplayName,
+  agentDescription,
 } from "@/lib/utils";
 
 interface PageProps {
@@ -74,8 +77,8 @@ function AgentDetailBody({ agentId }: { agentId: string }) {
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <div className="flex items-center gap-3">
-                    <h1 className="font-mono text-lg font-bold text-white">
-                      {formatAgentId(agent.agent_id)}
+                    <h1 className="text-lg font-bold text-white">
+                      {agentDisplayName(agent.metadata)}
                     </h1>
                     <span
                       className={cn(
@@ -86,6 +89,12 @@ function AgentDetailBody({ agentId }: { agentId: string }) {
                       {grade}
                     </span>
                   </div>
+                  <div className="mt-1 font-mono text-xs text-white/40">
+                    {formatAgentId(agent.agent_id)}
+                  </div>
+                  <p className="mt-2 max-w-xl text-xs leading-relaxed text-white/50">
+                    {agentDescription(agent.metadata)}
+                  </p>
                   <p className="mt-1 text-xs text-white/40">
                     owner {formatAgentId(agent.owner)} · registered block {agent.block_number} ·{" "}
                     {formatTime(agent.registered_at)}
@@ -127,9 +136,19 @@ function AgentDetailBody({ agentId }: { agentId: string }) {
                 </div>
               )}
               {agent.metadata && (
-                <pre className="mt-4 max-h-32 overflow-auto rounded-md bg-black/30 p-3 text-xs text-white/60">
-                  {agent.metadata}
-                </pre>
+                <>
+                  <div className="mt-4">
+                    <Badge
+                      variant="outline"
+                      className="border-prism-accent/30 bg-prism-accent/10 text-[10px] font-medium text-prism-accent"
+                    >
+                      {agentCategory(agent.metadata)}
+                    </Badge>
+                  </div>
+                  <pre className="mt-2 max-h-32 overflow-auto rounded-md bg-black/30 p-3 text-xs text-white/60">
+                    {agent.metadata}
+                  </pre>
+                </>
               )}
             </section>
 

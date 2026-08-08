@@ -4,6 +4,7 @@ import (
 	"context"
 	"math/big"
 	"strings"
+	"sync"
 
 	"github.com/zane/web3-offchain/internal/repository"
 	"github.com/zane/web3-offchain/model"
@@ -27,12 +28,44 @@ type PrismSettleService struct {
 	trustRepo *repository.TrustThresholdRepository
 	reorgRepo *repository.ReorgEventRepository
 	perfRepo  *repository.PerfResultRepository
+	grabRepo  *repository.GrabAttemptRepository
+	// scoreFetcher resolves live on-chain scores for agents with no
+	// aggregation event in the DB (e.g. seed agents). Optional; nil-safe.
+	scoreFetcher *ScoreFetcher
 }
 
 // NewPrismSettleService creates a PrismSettleService with the legacy
 // chain-event repository only (back-compat for existing callers).
 func NewPrismSettleService(ceRepo *repository.ChainEventRepository) *PrismSettleService {
 	return &PrismSettleService{ceRepo: ceRepo}
+}
+
+// SetScoreFetcher wires the optional live-score resolver (main.go).
+func (s *PrismSettleService) SetScoreFetcher(f *ScoreFetcher) {
+	s.scoreFetcher = f
+}
+
+// RecordGrabAttempt persists an agent's grab attempt (success/failure+reason).
+func (s *PrismSettleService) RecordGrabAttempt(ctx context.Context, att *model.GrabAttempt) error {
+	if s.grabRepo == nil {
+		return errno.ErrInternal
+	}
+	if att.AgentID == "" || att.JobID == "" {
+		return errno.ErrInvalidParam
+	}
+	return s.grabRepo.Create(ctx, att)
+}
+
+// ListGrabAttempts returns paginated grab attempts, optionally filtered.
+func (s *PrismSettleService) ListGrabAttempts(
+	ctx context.Context,
+	chainName, agentID, jobID string,
+	page, size int,
+) ([]model.GrabAttempt, int64, error) {
+	if s.grabRepo == nil {
+		return nil, 0, errno.ErrInternal
+	}
+	return s.grabRepo.List(ctx, chainName, agentID, jobID, page, size)
 }
 
 // NewPrismSettleServiceWithRepos creates a fully-wired PrismSettleService.
@@ -58,6 +91,7 @@ func NewPrismSettleServiceWithPerfRepos(
 	trustRepo *repository.TrustThresholdRepository,
 	reorgRepo *repository.ReorgEventRepository,
 	perfRepo *repository.PerfResultRepository,
+	grabRepo *repository.GrabAttemptRepository,
 ) *PrismSettleService {
 	return &PrismSettleService{
 		ceRepo:    ceRepo,
@@ -65,13 +99,17 @@ func NewPrismSettleServiceWithPerfRepos(
 		trustRepo: trustRepo,
 		reorgRepo: reorgRepo,
 		perfRepo:  perfRepo,
+		grabRepo:  grabRepo,
 	}
 }
 
 // GetEvents returns paginated PrismSettle registry events for an agent.
 // When agentID is empty, all registry events on the chain are returned.
+// eventType optionally filters to a single event type (e.g. PRISM_JOB_CREATED).
+// minID > 0 switches to incremental cursor mode (id > minID, ascending).
 func (s *PrismSettleService) GetEvents(
-	ctx context.Context, chainName, contractAddr, agentID string,
+	ctx context.Context, chainName, contractAddr, agentID, eventType string,
+	minID uint64,
 	page, size int,
 ) ([]model.ChainEvent, int64, error) {
 	if page < 1 {
@@ -83,9 +121,10 @@ func (s *PrismSettleService) GetEvents(
 
 	contractAddr = strings.TrimSpace(contractAddr)
 	agentID = strings.TrimSpace(agentID)
+	eventType = strings.TrimSpace(eventType)
 
 	events, total, err := s.ceRepo.GetPrismEvents(
-		ctx, chainName, contractAddr, agentID, page, size,
+		ctx, chainName, contractAddr, agentID, eventType, minID, page, size,
 	)
 	if err != nil {
 		logger.Warn("prismsettle get events failed",
@@ -149,7 +188,7 @@ func (s *PrismSettleService) ListAgents(
 	}
 	out := make([]model.AgentVO, 0, len(recs))
 	for i := range recs {
-		vo := model.AgentVO{
+		out = append(out, model.AgentVO{
 			AgentID:      recs[i].AgentID,
 			Owner:        recs[i].Owner,
 			Metadata:     recs[i].Metadata,
@@ -157,14 +196,57 @@ func (s *PrismSettleService) ListAgents(
 			RegisteredAt: recs[i].RegisteredAt,
 			BlockNumber:  recs[i].BlockNumber,
 			Score:        "0",
-		}
-		// Best-effort score enrichment; ignore error (no aggregation yet).
-		if ev, err := s.ceRepo.GetPrismScore(ctx, chainName, "", recs[i].AgentID); err == nil {
-			vo.Score = ev.Value
-		}
-		out = append(out, vo)
+		})
 	}
+	s.enrichScores(ctx, chainName, recs, out)
 	return out, total, nil
+}
+
+// enrichScores fills each AgentVO's Score: DB PRISM_AGGREGATED event first
+// (fast, no RPC), then a parallel eth_call fallback for the rest. Parallelism
+// matters — seed agents have no aggregation event and the testnet RPC
+// rate-limits hard; serial fetches made /agents take seconds.
+func (s *PrismSettleService) enrichScores(
+	ctx context.Context,
+	chainName string,
+	recs []model.AgentRegistryRecord,
+	out []model.AgentVO,
+) {
+	scores := make([]string, len(recs))
+	needChain := make([]bool, len(recs))
+	for i := range recs {
+		if ev, err := s.ceRepo.GetPrismScore(ctx, chainName, "", recs[i].AgentID); err == nil {
+			scores[i] = ev.Value
+		} else {
+			needChain[i] = true
+		}
+	}
+	if s.scoreFetcher == nil {
+		for i := range recs {
+			out[i].Score = scores[i]
+		}
+		return
+	}
+	var wg sync.WaitGroup
+	for i := range recs {
+		if !needChain[i] {
+			continue
+		}
+		wg.Add(1)
+		go func(idx int, agentID string) {
+			defer wg.Done()
+			live, err := s.scoreFetcher.FetchScore(ctx, agentID)
+			if err != nil {
+				logger.Warn("score fetch failed", logger.String("agent", agentID), logger.Error(err))
+				return
+			}
+			scores[idx] = live
+		}(i, recs[i].AgentID)
+	}
+	wg.Wait()
+	for i := range recs {
+		out[i].Score = scores[i]
+	}
 }
 
 // GetAgent returns a single agent by agentId, enriched with score. FR-A07.
@@ -189,6 +271,13 @@ func (s *PrismSettleService) GetAgent(
 	}
 	if ev, err := s.ceRepo.GetPrismScore(ctx, chainName, "", rec.AgentID); err == nil {
 		vo.Score = ev.Value
+	} else if s.scoreFetcher != nil {
+		// Fallback: live on-chain score (seed agents have no aggregation
+		// event). Same path as ListAgents, sharing its cache so the list
+		// page and the detail page always agree.
+		if live, err := s.scoreFetcher.FetchScore(ctx, rec.AgentID); err == nil {
+			vo.Score = live
+		}
 	}
 	return vo, nil
 }

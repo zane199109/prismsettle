@@ -192,6 +192,13 @@ contract PrismSettleRegistry is AccessControl {
         aggregatedScore[agentId] = seedScore;
     }
 
+    /// @notice Owner address of an agent. grabJob uses this to enforce that
+    ///         only the agent's own wallet (its operator) may claim jobs —
+    ///         agents stay autonomous; no third-party delegation.
+    function agentOwner(uint256 agentId) external view returns (address) {
+        return agents[agentId].owner;
+    }
+
     /// @notice Mark or unmark a contract as a trusted Job contract. Trusted
     ///         Job contracts may call submitValidation with source=3 (Buyer).
     /// @param job      The Job contract address.

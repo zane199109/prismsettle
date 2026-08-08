@@ -44,9 +44,9 @@ web3:
       abi_type: "erc20"
       rpc_urls:
         - "https://testnet-rpc.monad.xyz"
-      contract_addr: "0xA82937ad81e8aB775c9B32F363CE5E8564207739"
+      contract_addr: "0xC55Eb9d42fE23D82C2830Fb3a2488DB6442c3bc7"
       contract_parser: PrismSettle
-      start_block: 51701940
+      start_block: 51825700
       workers: 5
       batch_size_db: 200
       batch_size_sync: 100
@@ -73,9 +73,9 @@ web3:
       abi_type: "erc20"
       rpc_urls:
         - "https://testnet-rpc.monad.xyz"
-      contract_addr: "0x4B09DB038dF842277f3f1aD4500b9BEDBFcB47cB"
+      contract_addr: "0xD66Af51c864b83ae4dB0F35898708C184E212a16"
       contract_parser: PrismSettleJob
-      start_block: 51701940
+      start_block: 51825700
       workers: 5
       batch_size_db: 200
       batch_size_sync: 100
@@ -102,9 +102,9 @@ web3:
       abi_type: "erc20"
       rpc_urls:
         - "https://testnet-rpc.monad.xyz"
-      contract_addr: "0x740c2969e537706A4f4757166e5eBEeD0E4DAD15"
+      contract_addr: "0x26562169d70137095d8090Cee258721CB2F496F9"
       contract_parser: PrismSettleHook
-      start_block: 51701940
+      start_block: 51825700
       workers: 5
       batch_size_db: 200
       batch_size_sync: 100

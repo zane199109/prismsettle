@@ -85,7 +85,7 @@ describe("TrustGate", () => {
     });
     render(<TrustGate agentId="0xabc" />);
     expect(screen.getByText("REVIEW")).toBeInTheDocument();
-    expect(screen.getByText(/FR-AP12/)).toBeInTheDocument();
+    expect(screen.getByText(/Score is in the review band/)).toBeInTheDocument();
   });
 
   it("renders DENY decision with red tone and FR-AP13 hint", () => {
@@ -97,7 +97,7 @@ describe("TrustGate", () => {
     });
     render(<TrustGate agentId="0xabc" />);
     expect(screen.getByText("DENY")).toBeInTheDocument();
-    expect(screen.getByText(/FR-AP13/)).toBeInTheDocument();
+    expect(screen.getByText(/Score is below the deny threshold/)).toBeInTheDocument();
     expect(screen.getByText(/createJob is blocked/)).toBeInTheDocument();
   });
 
