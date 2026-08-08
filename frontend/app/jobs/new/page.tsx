@@ -14,7 +14,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, Loader2 } from "lucide-react";
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract } from "wagmi";
 import { monadTestnet } from "wagmi/chains";
-import { decodeEventLog, parseAbiItem } from "viem";
+import { decodeEventLog, parseAbiItem, parseUnits } from "viem";
 
 import { TrustGate } from "@/components/job/TrustGate";
 import { FundingPathBadge } from "@/components/job/FundingPathBadge";
@@ -89,13 +89,23 @@ function NewJobBody() {
   const ready = contractsReady() && JOB_CONTRACT_ADDRESS !== undefined;
   const wrongChain = chain && chain.id !== monadTestnet.id;
   const blocked = decision === "deny";
-  const amountBig = amount ? BigInt(amount) : 0n;
+  // Human-friendly amounts: parseUnits converts "100" / "0.5" to wei (18 decimals).
+  // Returns -1n for invalid input so callers can surface an error.
+  const parseAmount = (v: string): bigint => {
+    if (!v) return 0n;
+    try {
+      return parseUnits(v, 18);
+    } catch {
+      return -1n;
+    }
+  };
+  const amountBig = parseAmount(amount);
   const allowanceBig = (allowance as bigint | undefined) ?? 0n;
   const needsApprove = allowanceBig < amountBig;
   // MON mode: wrapping only needed when the wallet's WMON balance is short.
   const wmonBalanceBig = (wmonBalance as bigint | undefined) ?? 0n;
   const needsWrap = currency === "mon" && wmonBalanceBig < amountBig;
-  const wrapAmountBig = wrapAmount ? BigInt(wrapAmount) : 0n;
+  const wrapAmountBig = parseAmount(wrapAmount);
 
   async function handleWrap(e: React.FormEvent) {
     e.preventDefault();
@@ -126,6 +136,15 @@ function NewJobBody() {
     setError(null);
     setTxHash(null);
 
+    if (amountBig < 0n) {
+      setError("Invalid amount (use e.g. 100).");
+      return;
+    }
+    if (amountBig <= 0n) {
+      setError("Amount must be greater than 0.");
+      return;
+    }
+
     if (wrongChain) {
       setError(`Switch to Monad Testnet (chainId ${monadTestnet.id}).`);
       return;
@@ -143,7 +162,11 @@ function NewJobBody() {
       setError("Deadline must be in the future.");
       return;
     }
-    const minRepBig = minProviderReputation ? BigInt(minProviderReputation) : 0n;
+    const minRepBig = minProviderReputation ? parseAmount(minProviderReputation) : 0n;
+    if (minRepBig < 0n) {
+      setError("Invalid min reputation (use e.g. 0.5).");
+      return;
+    }
 
     try {
       // Step 1: createJob — per-job payment token (0 = default USDC, or WMON)
@@ -304,7 +327,7 @@ function NewJobBody() {
                   required
                   value={wrapAmount}
                   onChange={(e) => setWrapAmount(e.target.value)}
-                  placeholder="amount in wei (e.g. 100000000000000000000 = 100 MON)"
+                  placeholder="e.g. 100 (MON to wrap)"
                   className="flex-1 rounded-lg border border-white/10 bg-prism-surface/60 px-3 py-2 font-mono text-sm text-white placeholder:text-white/30 focus:border-prism-accent focus:outline-none"
                 />
                 <button
@@ -329,7 +352,7 @@ function NewJobBody() {
               required
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              placeholder="amount in wei (e.g. 100000000000000000000 = 100 tokens)"
+              placeholder="e.g. 100 (USDC or MON)"
               className="w-full rounded-lg border border-white/10 bg-prism-surface/60 px-3 py-2 font-mono text-sm text-white placeholder:text-white/30 focus:border-prism-accent focus:outline-none disabled:opacity-50"
             />
             <p className="mt-1 text-[11px] text-white/40">
@@ -363,7 +386,7 @@ function NewJobBody() {
               type="text"
               value={minProviderReputation}
               onChange={(e) => setMinProviderReputation(e.target.value)}
-              placeholder="500000000000000000 (0.5e18)"
+              placeholder="e.g. 0.5 (reputation threshold)"
               className="w-full rounded-lg border border-white/10 bg-prism-surface/60 px-3 py-2 font-mono text-sm text-white placeholder:text-white/30 focus:border-prism-accent focus:outline-none"
             />
             <p className="mt-1 text-[11px] text-white/40">
