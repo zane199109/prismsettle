@@ -33,7 +33,13 @@ export function Providers({ children }: { children: React.ReactNode }) {
     >
       <WagmiProvider config={config}>
         <QueryClientProvider client={queryClient}>
-          <RainbowKitProvider theme={darkTheme()}>
+          <RainbowKitProvider
+            theme={darkTheme({
+              accentColor: "#8B5CF6", // prism-accent
+              accentColorForeground: "white",
+              borderRadius: "medium",
+            })}
+          >
             <TooltipProvider>
               {children}
               <Toaster richColors position="bottom-right" />
