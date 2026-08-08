@@ -16,6 +16,7 @@
 import { useMemo } from "react";
 import { usePoll } from "./usePoll";
 import { getShardActivity } from "@/lib/prismsettle";
+import { CHAIN_NAME } from "@/lib/contracts";
 import type { ShardActivity } from "@/lib/types";
 
 export interface ShardHeatmapData {
@@ -34,7 +35,7 @@ const EMPTY: ShardHeatmapData = {
 };
 
 export function useShardActivity(
-  chainName?: string,
+  chainName: string = CHAIN_NAME,
   intervalMs = 5000,
 ) {
   const { data, error, isValidating } = usePoll<ShardActivity[]>(

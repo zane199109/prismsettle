@@ -9,6 +9,7 @@
 import { useState } from "react";
 import { usePoll } from "./usePoll";
 import { listJobs } from "@/lib/prismsettle";
+import { CHAIN_NAME } from "@/lib/contracts";
 import type { JobVO, Paginated } from "@/lib/types";
 
 export interface UseJobsOptions {
@@ -24,7 +25,7 @@ export interface UseJobsOptions {
 
 export function useJobs(opts: UseJobsOptions = {}) {
   const {
-    chainName,
+    chainName = CHAIN_NAME,
     status,
     page = 1,
     size = 20,

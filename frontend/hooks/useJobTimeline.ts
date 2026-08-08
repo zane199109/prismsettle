@@ -8,13 +8,14 @@
 
 import { usePoll } from "./usePoll";
 import { getJobTimeline } from "@/lib/prismsettle";
+import { CHAIN_NAME } from "@/lib/contracts";
 import type { JobTimelineItem } from "@/lib/types";
 
 export function useJobTimeline(
   jobId: string | undefined,
   opts: { chainName?: string; intervalMs?: number } = {},
 ) {
-  const { chainName, intervalMs = 5000 } = opts;
+  const { chainName = CHAIN_NAME, intervalMs = 5000 } = opts;
   const enabled = Boolean(jobId);
   const { data, error, isValidating, mutate } = usePoll<JobTimelineItem[]>(
     enabled ? `job-timeline:${chainName ?? "all"}:${jobId}` : null,

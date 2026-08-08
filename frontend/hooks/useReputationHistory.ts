@@ -18,6 +18,7 @@
 
 import { usePoll } from "./usePoll";
 import { getReputationHistory } from "@/lib/prismsettle";
+import { CHAIN_NAME } from "@/lib/contracts";
 import type { ChainEvent } from "@/lib/types";
 
 export type ReputationSource = 0 | 1 | 2; // Validator | Evaluator | Arbitration
@@ -57,7 +58,7 @@ export function useReputationHistory(
   agentId: string | undefined,
   opts: { chainName?: string; size?: number; intervalMs?: number } = {},
 ) {
-  const { chainName, size = 50, intervalMs = 15000 } = opts;
+  const { chainName = CHAIN_NAME, size = 50, intervalMs = 15000 } = opts;
   const enabled = Boolean(agentId);
   const key = `rep-history:${chainName ?? "all"}:${agentId ?? "_"}:${size}`;
   const { data, error, isValidating, mutate } = usePoll(

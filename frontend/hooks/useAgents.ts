@@ -10,6 +10,7 @@
 
 import { usePoll } from "./usePoll";
 import { listAgents } from "@/lib/prismsettle";
+import { CHAIN_NAME } from "@/lib/contracts";
 import type { AgentVO, Paginated } from "@/lib/types";
 
 export interface UseAgentsOptions {
@@ -23,7 +24,7 @@ export interface UseAgentsOptions {
 }
 
 export function useAgents(opts: UseAgentsOptions = {}) {
-  const { chainName, page = 1, size = 10, intervalMs = 8000, userAddress } = opts;
+  const { chainName = CHAIN_NAME, page = 1, size = 10, intervalMs = 8000, userAddress } = opts;
   const key = `agents:${chainName ?? "all"}:${page}:${size}`;
   const { data, error, isValidating, mutate } = usePoll<Paginated<AgentVO>>(
     key,

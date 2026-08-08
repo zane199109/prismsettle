@@ -9,13 +9,14 @@
 
 import { usePoll } from "./usePoll";
 import { getAgent, getEvents } from "@/lib/prismsettle";
+import { CHAIN_NAME } from "@/lib/contracts";
 import type { AgentVO, ChainEvent, Paginated } from "@/lib/types";
 
 export function useAgentDetail(
   agentId: string | undefined,
   opts: { chainName?: string; intervalMs?: number } = {},
 ) {
-  const { chainName, intervalMs = 10000 } = opts;
+  const { chainName = CHAIN_NAME, intervalMs = 10000 } = opts;
   const enabled = Boolean(agentId);
   const {
     data: agent,
@@ -43,7 +44,7 @@ export function useAgentEvents(
   agentId: string | undefined,
   opts: { chainName?: string; size?: number; intervalMs?: number } = {},
 ) {
-  const { chainName, size = 20, intervalMs = 8000 } = opts;
+  const { chainName = CHAIN_NAME, size = 20, intervalMs = 8000 } = opts;
   const enabled = Boolean(agentId);
   const { data, error, isValidating, mutate } = usePoll<Paginated<ChainEvent>>(
     enabled ? `agent-events:${chainName ?? "all"}:${agentId}:${size}` : null,

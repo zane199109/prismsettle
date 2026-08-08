@@ -9,6 +9,7 @@
 
 import { usePoll } from "./usePoll";
 import { getEvents } from "@/lib/prismsettle";
+import { CHAIN_NAME } from "@/lib/contracts";
 import type { ChainEvent, Paginated } from "@/lib/types";
 
 export interface UseEventsOptions {
@@ -25,7 +26,7 @@ export interface UseEventsOptions {
 
 export function useEvents(opts: UseEventsOptions = {}) {
   const {
-    chainName,
+    chainName = CHAIN_NAME,
     eventType,
     to,
     page = 1,

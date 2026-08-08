@@ -19,6 +19,7 @@
 import { useMemo } from "react";
 import { usePoll } from "./usePoll";
 import { getJobStatus } from "@/lib/prismsettle";
+import { CHAIN_NAME } from "@/lib/contracts";
 
 const TERMINAL_STATES = new Set(["Completed", "Resolved", "Cancelled"]);
 
@@ -33,7 +34,7 @@ export function useJobStatusPoll(
   jobId: string | null | undefined,
   opts: UseJobStatusPollOptions = {},
 ) {
-  const { chainName: chain_name, intervalMs = 3000 } = opts;
+  const { chainName: chain_name = CHAIN_NAME, intervalMs = 3000 } = opts;
 
   const { data, error, mutate, isValidating } = usePoll(
     jobId ? `job-status:${jobId}` : null,
