@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"flag"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	_ "net/http/pprof" // import pprof to analyze the performance
 	"os"
 	"os/signal"
+	"strings"
 	"sync"
 	"syscall"
 	"time"
@@ -23,10 +25,12 @@ import (
 	"github.com/zane/web3-offchain/internal/router"
 	"github.com/zane/web3-offchain/internal/service"
 	"github.com/zane/web3-offchain/internal/storage"
+	"github.com/zane/web3-offchain/model"
 	"github.com/zane/web3-offchain/pkg/config"
 	"github.com/zane/web3-offchain/pkg/logger"
 	prism_api "github.com/zane/web3-offchain/prismsettle/api"
 	"github.com/zane/web3-offchain/prismsettle/chainbinding"
+	"github.com/zane/web3-offchain/prismsettle/demo"
 	"github.com/zane/web3-offchain/prismsettle/evaluator"
 	"github.com/zane/web3-offchain/prismsettle/keeper"
 	prism_svc "github.com/zane/web3-offchain/prismsettle/service"
@@ -34,10 +38,43 @@ import (
 
 var configPath = flag.String("config", "../config/prod.yaml", "config file path")
 
+// loadDotEnv reads the project .env (KEY=VALUE lines) into the process
+// environment so secrets (BUYER_KEY, AUDITOR_*_KEY, PRISM_EVALUATOR_KEY,
+// DEPLOYER_KEY, OPENAI_API_KEY) don't need to be exported manually on every
+// start. Existing environment variables win; the file is git-ignored.
+func loadDotEnv() {
+	for _, p := range []string{"./.env", "../.env"} {
+		f, err := os.Open(p)
+		if err != nil {
+			continue
+		}
+		sc := bufio.NewScanner(f)
+		for sc.Scan() {
+			line := strings.TrimSpace(sc.Text())
+			if line == "" || strings.HasPrefix(line, "#") {
+				continue
+			}
+			key, val, ok := strings.Cut(line, "=")
+			if !ok {
+				continue
+			}
+			key = strings.TrimSpace(key)
+			if os.Getenv(key) == "" {
+				_ = os.Setenv(key, strings.TrimSpace(val))
+			}
+		}
+		_ = f.Close()
+		logger.Info("loaded .env", logger.String("path", p))
+		return
+	}
+	logger.Warn("no .env file found; secrets must come from the environment")
+}
+
 func main() {
+	loadDotEnv()
+
 	// 1. parse flags
 	flag.Parse()
-
 	// 2. initialize config
 	if err := config.InitConfig(*configPath); err != nil {
 		fmt.Fprintf(os.Stderr, "init config failed: %v\n", err)
@@ -320,10 +357,58 @@ func main() {
 	erc20Handler := api.NewERC20Handler(erc20Service, validator)
 	prismHandler := prism_api.NewPrismSettleHandler(prismService, validator)
 
+	// Demo orchestrator: chat-style agent collaboration playback. Wired only
+	// when the evaluator chain binding (job + hook) is configured and the
+	// signing keys are injected via env (BUYER_KEY / AUDITOR_SENIOR_KEY /
+	// PRISM_EVALUATOR_KEY / DEPLOYER_KEY). Missing keys → demo disabled.
+	var demoHandler *prism_api.DemoHandler
+	if evCfg := config.Cfg.Evaluator; evCfg.JobAddr != "" && evCfg.HookAddr != "" &&
+		evCfg.PaymentToken != "" && os.Getenv("BUYER_KEY") != "" {
+		if err := pgStorage.DB().AutoMigrate(&model.DemoSession{}, &model.DemoMessage{}); err != nil {
+			logger.Fatal("automigrate demo tables failed", logger.Error(err))
+		}
+		demoRepo := demo.NewSessionRepo(pgStorage.DB())
+		demoActions, err := demo.NewActions(demo.ActionsConfig{
+			RPCURL:       evCfg.RPCURL,
+			ChainID:      evCfg.ChainID,
+			JobAddr:      evCfg.JobAddr,
+			HookAddr:     evCfg.HookAddr,
+			TokenAddr:    evCfg.PaymentToken,
+			BuyerKey:     os.Getenv("BUYER_KEY"),
+			ProviderKey:  os.Getenv("AUDITOR_SENIOR_KEY"),
+			JuniorKey:    os.Getenv("AUDITOR_JUNIOR_KEY"),
+			RookieKey:    os.Getenv("AUDITOR_ROOKIE_KEY"),
+			EvaluatorKey: os.Getenv("PRISM_EVALUATOR_KEY"),
+			DeployerKey:  os.Getenv("DEPLOYER_KEY"),
+		})
+		if err != nil {
+			logger.Fatal("init demo actions", logger.Error(err))
+		}
+		defer demoActions.Close()
+		llmClient := demo.NewLLMClient("", os.Getenv("OPENAI_API_KEY"), "deepseek-v4-flash")
+		announcementWait := time.Duration(evCfg.AnnouncementWaitSec) * time.Second
+		orch := demo.NewOrchestrator(
+			demoRepo, demoActions, llmClient,
+			demoActions.BuyerAgentID(), demoActions.ProviderAgentID(), demoActions.EvaluatorAgentID(),
+			400*time.Millisecond,
+			announcementWait,
+		)
+		demoHandler = prism_api.NewDemoHandler(orch)
+		logger.Info("demo orchestrator wired",
+			logger.String("job", evCfg.JobAddr),
+			logger.String("hook", evCfg.HookAddr),
+			logger.String("token", evCfg.PaymentToken))
+	} else {
+		logger.Warn("demo orchestrator disabled: job/hook/token or BUYER_KEY missing")
+	}
+
 	// 12. init middleware and router
 	routables := []router.Routable{
 		erc20Handler,
 		prismHandler,
+	}
+	if demoHandler != nil {
+		routables = append(routables, demoHandler)
 	}
 
 	middleware.Init(*config.Cfg)

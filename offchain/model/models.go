@@ -52,6 +52,51 @@ const (
 	TypePrismArbitrationExecuted      EventType = "PRISM_ARBITRATION_EXECUTED"
 )
 
+// -----------------------------------------------------------------------------
+// Demo session (chat-style agent collaboration playback)
+// -----------------------------------------------------------------------------
+
+// DemoSession is one scripted-but-live collaboration run: a real job created
+// from a user-facing form, then driven to completion by the orchestrator
+// DemoSession holds one chat-style collaboration demo run.
+type DemoSession struct {
+	ID            string `gorm:"primaryKey;column:id"`
+	JobID         string `gorm:"column:job_id"`
+	Title         string `gorm:"column:title"`
+	Description   string `gorm:"column:description"`
+	Amount        string `gorm:"column:amount"`
+	Token         string `gorm:"column:token"`
+	ProviderAgent string `gorm:"column:provider_agent"`
+	Scenario      string `gorm:"column:scenario"` // arbitration | direct
+	State         string `gorm:"column:state"`
+	MaxRejects    int    `gorm:"column:max_rejects"`
+	Result        string `gorm:"column:result;type:text"`
+	CreatedAt     time.Time
+	FinishedAt    *time.Time
+}
+
+// TableName maps DemoSession to demo_sessions.
+func (DemoSession) TableName() string { return "demo_sessions" }
+
+// DemoMessage is one chat bubble in a demo session: who said what, and the
+// on-chain action (tx) that accompanied the message.
+type DemoMessage struct {
+	ID        uint64    `gorm:"primaryKey;autoIncrement"`
+	SessionID string    `gorm:"column:session_id"`
+	Step      int       `gorm:"column:step"`
+	Role      string    `gorm:"column:role"` // buyer/provider/evaluator/system
+	Content   string    `gorm:"column:content;type:text"`
+	Report    string    `gorm:"column:report;type:text"` // full deliverable body (markdown)
+	DeliverableHash string `gorm:"column:deliverable_hash"` // on-chain keccak of the report
+	Action    string    `gorm:"column:action"`           // create_and_fund/grab/submit/reject/dispute/resolve/execute
+	TxHash    string    `gorm:"column:tx_hash"`
+	State     string    `gorm:"column:state"` // job state after this message
+	CreatedAt time.Time `gorm:"column:created_at"`
+}
+
+// TableName maps DemoMessage to demo_messages.
+func (DemoMessage) TableName() string { return "demo_messages" }
+
 // Transfer transfer event struct
 type TransferEvent struct {
 	ChainName   string `json:"chain_name"` // Added
