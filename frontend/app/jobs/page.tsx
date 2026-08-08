@@ -7,7 +7,7 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Plus, Search, ChevronLeft, ChevronRight, Filter } from "lucide-react";
+import { Plus, Search, ChevronLeft, ChevronRight, Filter, RefreshCw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -49,7 +49,10 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive" | "
   Resolved: "outline",
 };
 
-const PAGE_SIZE = 15;
+// PAGE_SIZE is in EVENT rows, not jobs: the backend /jobs endpoint streams
+// raw PRISM_JOB_* events and the frontend aggregates them by jobId. Each job
+// emits ~10 events, so 50 rows ≈ 5-6 jobs per page (fine for the demo scale).
+const PAGE_SIZE = 50;
 
 export default function JobsListPage() {
   const router = useRouter();
@@ -57,7 +60,7 @@ export default function JobsListPage() {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
 
-  const { jobs, total, isValidating } = useJobs({
+  const { jobs, total, isValidating, refresh } = useJobs({
     status: status === "all" ? undefined : status,
     page,
     size: PAGE_SIZE,
@@ -89,11 +92,17 @@ export default function JobsListPage() {
               {total} total · ERC-8183 lifecycle · sharded by jobId &amp; 0xFF
             </p>
           </div>
-          <Button asChild>
-            <Link href="/jobs/new">
-              <Plus className="h-4 w-4" /> New Job
-            </Link>
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => refresh()} disabled={isValidating}>
+              <RefreshCw className={cn("mr-2 h-3.5 w-3.5", isValidating && "animate-spin")} />
+              {isValidating ? "刷新中…" : "刷新"}
+            </Button>
+            <Button asChild>
+              <Link href="/jobs/new">
+                <Plus className="h-4 w-4" /> New Job
+              </Link>
+            </Button>
+          </div>
         </div>
 
         <Card className="border-white/10 bg-prism-surface/40">

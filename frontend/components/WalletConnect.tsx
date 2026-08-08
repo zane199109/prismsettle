@@ -1,95 +1,73 @@
 "use client";
 
-// Fully custom wallet connect control styled to match the project's
-// prism theme (dark glass + violet accent) instead of RainbowKit's
-// default look. Same connection logic, project-native appearance.
+// Custom wallet connect control styled to the project's prism theme.
+// Uses plain wagmi + injected connector (browser extension wallet) — no
+// WalletConnect Cloud / RainbowKit remote config, so it works fully offline
+// and never hits api.web3modal.org (the placeholder projectId 403s).
 
-import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { useAccount, useChainId, useConnect, useDisconnect, useSwitchChain } from "wagmi";
+import { injected } from "wagmi/connectors";
+import { monadTestnet } from "wagmi/chains";
 import { Wallet } from "lucide-react";
+import { cn } from "@/lib/utils";
+
+function shortAddr(a: string | undefined): string {
+  if (!a) return "";
+  return `${a.slice(0, 6)}…${a.slice(-4)}`;
+}
 
 export function WalletConnect() {
+  const { address, isConnected } = useAccount();
+  const chainId = useChainId();
+  const { connect, isPending } = useConnect();
+  const { disconnect } = useDisconnect();
+  const { switchChain, isPending: isSwitching } = useSwitchChain();
+
+  const isMonad = chainId === monadTestnet.id;
+  const chainLabel = isMonad ? "Monad Testnet" : chainId ? `Unknown (${chainId})` : "Unknown chain";
+
+  if (!isConnected || !address) {
+    return (
+      <button
+        onClick={() => connect({ connector: injected() })}
+        disabled={isPending}
+        className="inline-flex items-center gap-2 rounded-lg bg-prism-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-prism-accent/80 disabled:opacity-60"
+      >
+        <Wallet className="h-4 w-4" />
+        {isPending ? "Connecting…" : "Connect Wallet"}
+      </button>
+    );
+  }
+
   return (
-    <ConnectButton.Custom>
-      {({
-        account,
-        chain,
-        openAccountModal,
-        openChainModal,
-        openConnectModal,
-        authenticationStatus,
-        mounted,
-      }) => {
-        const ready = mounted && authenticationStatus !== "loading";
-        const connected =
-          ready &&
-          account &&
-          chain &&
-          (!authenticationStatus || authenticationStatus === "authenticated");
-
-        return (
-          <div
-            {...(!ready && { "aria-hidden": true })}
-            className={!ready ? "pointer-events-none select-none opacity-0" : ""}
-          >
-            {(() => {
-              if (!connected) {
-                return (
-                  <button
-                    onClick={openConnectModal}
-                    className="inline-flex items-center gap-2 rounded-lg bg-prism-accent px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-prism-accent/80"
-                  >
-                    <Wallet className="h-4 w-4" />
-                    Connect Wallet
-                  </button>
-                );
-              }
-
-              if (chain.unsupported) {
-                return (
-                  <button
-                    onClick={openChainModal}
-                    className="inline-flex items-center gap-2 rounded-lg border border-prism-warn/50 bg-prism-warn/10 px-4 py-2 text-sm font-semibold text-prism-warn hover:bg-prism-warn/20"
-                  >
-                    Wrong network
-                  </button>
-                );
-              }
-
-              return (
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={openChainModal}
-                    className="hidden items-center gap-1.5 rounded-lg border border-white/10 bg-prism-surface/60 px-3 py-2 text-xs text-white/60 hover:border-white/20 sm:inline-flex"
-                    title={chain.name}
-                  >
-                    {chain.hasIcon && (
-                      <span
-                        className="h-3 w-3 rounded-full"
-                        style={{
-                          background: chain.iconBackground,
-                          backgroundImage: chain.iconUrl,
-                        }}
-                      />
-                    )}
-                    {chain.name}
-                  </button>
-                  <button
-                    onClick={openAccountModal}
-                    className="inline-flex items-center gap-2 rounded-lg border border-prism-accent/40 bg-prism-accent/10 px-4 py-2 font-mono text-sm text-white transition-colors hover:bg-prism-accent/20"
-                  >
-                    {account.displayName}
-                    {account.displayBalance && (
-                      <span className="text-xs text-white/50">
-                        {account.displayBalance}
-                      </span>
-                    )}
-                  </button>
-                </div>
-              );
-            })()}
-          </div>
-        );
-      }}
-    </ConnectButton.Custom>
+    <div className="flex items-center gap-2">
+      <span
+        className={cn(
+          "hidden rounded-lg border px-3 py-2 text-xs sm:inline-flex",
+          isMonad
+            ? "border-white/10 bg-prism-surface/60 text-white/60"
+            : "border-prism-warn/40 bg-prism-warn/10 text-prism-warn",
+        )}
+      >
+        {chainLabel}
+      </span>
+      {!isMonad && (
+        <button
+          onClick={() => switchChain({ chainId: monadTestnet.id })}
+          disabled={isSwitching}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-prism-warn/50 bg-prism-warn/10 px-3 py-2 text-xs font-semibold text-prism-warn transition-colors hover:bg-prism-warn/20 disabled:opacity-60"
+        >
+          {isSwitching ? "Switching…" : "Switch to Monad"}
+        </button>
+      )}
+      <button
+        onClick={() => disconnect()}
+        title="Disconnect"
+        className="inline-flex items-center gap-2 rounded-lg border border-prism-accent/40 bg-prism-accent/10 px-4 py-2 font-mono text-sm text-white transition-colors hover:bg-prism-accent/20"
+      >
+        <Wallet className="h-4 w-4 text-prism-accent" />
+        {shortAddr(address)}
+      </button>
+    </div>
   );
 }

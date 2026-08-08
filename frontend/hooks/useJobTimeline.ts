@@ -39,7 +39,7 @@ export function useJobTimeline(
   jobId: string | undefined,
   opts: { chainName?: string; intervalMs?: number } = {},
 ) {
-  const { chainName = CHAIN_NAME, intervalMs = 5000 } = opts;
+  const { chainName = CHAIN_NAME, intervalMs = 3000 } = opts;
   const enabled = Boolean(jobId);
   const { data, error, isValidating, mutate } = usePoll<JobTimelineItem[]>(
     enabled ? `job-timeline:${chainName ?? "all"}:${jobId}` : null,

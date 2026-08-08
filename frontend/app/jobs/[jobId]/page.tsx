@@ -9,7 +9,7 @@
 // wagmi useWriteContract against the Monad testnet. FundFlowChart reads real
 // on-chain Job state via getJobState().
 
-import { use, useState } from "react";
+import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { ArrowLeft, Loader2, Gavel, FileUp, CheckCircle2, XCircle, Undo2 } from "lucide-react";
@@ -19,9 +19,11 @@ import { keccak256, toHex } from "viem";
 
 import { JobStatusTracker } from "@/components/job/JobStatusTracker";
 import { JobEventTimeline } from "@/components/job/JobEventTimeline";
+import { DemoStartPanel } from "@/components/demo/DemoStartPanel";
+import { DemoChat } from "@/components/demo/DemoChat";
+import { useDemoSession } from "@/hooks/useDemoSession";
 import { FundFlowChart } from "@/components/job/FundFlowChart";
 import { FundingPathBadge } from "@/components/job/FundingPathBadge";
-import { GrabAttemptsList } from "@/components/job/GrabAttemptsList";
 import { useJobStatusPoll } from "@/hooks/useJobStatusPoll";
 import { useJobTimeline } from "@/hooks/useJobTimeline";
 import { useEvents } from "@/hooks/useEvents";
@@ -63,20 +65,26 @@ function JobDetailBody({ jobId }: { jobId: string }) {
   const canDispute = status === "Submitted";
   const canReject = status === "Submitted";
 
+  // Shared demo session state: the top Status Tracker follows the live chat
+  // flow (liveState overrides the chain state while a demo is running).
+  const demo = useDemoSession();
+
   return (
     <div className="min-h-screen">
       
       <main className="mx-auto max-w-4xl px-6 py-8">
         <Link
-          href="/"
+          href="/jobs"
           className="mb-4 inline-flex items-center gap-1 text-sm text-white/60 hover:text-white"
         >
-          <ArrowLeft className="h-4 w-4" /> Back to dashboard
+          <ArrowLeft className="h-4 w-4" /> 返回任务列表
         </Link>
 
         <div className="mb-6 flex items-center justify-between">
           <div>
-            <h1 className="font-mono text-2xl font-bold text-white">Job #{jobId}</h1>
+            <h1 className="font-mono text-2xl font-bold text-white">
+              Job #<span title={jobId}>{jobId.slice(0, 10)}…{jobId.slice(-4)}</span>
+            </h1>
             <p className="mt-1 text-sm text-white/60">
               status:{" "}
               <span className="font-mono text-prism-accent">{status ?? "loading…"}</span>
@@ -93,10 +101,21 @@ function JobDetailBody({ jobId }: { jobId: string }) {
         {/* Status tracker (8.5a) */}
         <section className="rounded-xl border border-white/10 bg-prism-surface/40 p-5">
           <h2 className="mb-4 text-sm font-medium text-white">Status Tracking</h2>
-          <JobStatusTracker current={status ?? "Created"} timeline={timeline} />
+          <JobStatusTracker
+            current={status ?? "Created"}
+            timeline={timeline}
+            liveState={demo.liveState ?? undefined}
+            rejectCount={demo.rejectCount}
+          />
         </section>
 
-        {/* Full lifecycle event stream (submit / reject / dispute / arbitration) */}
+        {/* Chat-style live collaboration demo (live while it runs, replay
+            afterwards) — shown BEFORE the on-chain timeline so the flow is
+            read top-down: conversation first, chain events below */}
+        <DemoSection demo={demo} jobId={jobId} />
+
+        {/* Full lifecycle event stream (submit / reject / dispute / arbitration) —
+            appears step-by-step as blocks sync during the demo */}
         <JobEventTimeline timeline={timeline} />
 
         {/* Deliverable submission (8.5b, FR-JM03) — first submit or resubmit after reject */}
@@ -112,10 +131,66 @@ function JobDetailBody({ jobId }: { jobId: string }) {
 
         {/* Fund flow (8.5d, FR-JM04) — reads real on-chain Job state */}
         <FundFlowFromChain jobId={jobId} />
-
-        {/* Grab competition — who tried, who won, why the rest lost */}
-        <GrabAttemptsList jobId={jobId} title="抢单竞争过程" />
       </main>
+    </div>
+  );
+}
+
+// DemoSection — chat-style collaboration demo. On mount it loads the most
+// recent demo session for this job (history view); without one it shows the
+// start panel. Shares the session state with the top Status Tracker.
+function DemoSection({ demo, jobId }: { demo: ReturnType<typeof useDemoSession>; jobId: string }) {
+  const { sessionId, session, messages, creating, createError, start, loadByJob, reset } = demo;
+  const [started, setStarted] = useState(false);
+
+  // Load demo history for this job when the page opens.
+  useEffect(() => {
+    if (jobId) void loadByJob(jobId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobId]);
+
+  const handleStart = async (p: {
+    title: string;
+    description: string;
+    amount: string;
+    provider_agent: string;
+    scenario: string;
+  }) => {
+    const id = await start(p);
+    if (id) setStarted(true);
+  };
+
+  const hasSession = Boolean(sessionId);
+  const isFinished = session?.state === "executed" || session?.state === "failed";
+
+  return (
+    <div className="space-y-3">
+      {!started && !hasSession ? (
+        <DemoStartPanel onStart={handleStart} busy={creating} error={createError} />
+      ) : (
+        <>
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-medium text-white">
+              {started || !isFinished ? "实时协作演示" : "演示回放"}
+            </h3>
+            <button
+              onClick={() => {
+                reset();
+                setStarted(false);
+              }}
+              className="text-xs text-white/40 hover:text-white"
+            >
+              重新开始
+            </button>
+          </div>
+          {isFinished && (
+            <div className="rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-xs text-emerald-300">
+              ✅ 演示数据已自动保存（链上事件 + 聊天记录）——返回任务列表即可看到当前任务
+            </div>
+          )}
+          <DemoChat messages={messages} session={session} busy={creating && started} />
+        </>
+      )}
     </div>
   );
 }

@@ -58,16 +58,19 @@ function NewJobBody() {
 
   const [agentId, setAgentId] = useState(initialAgent);
   // deadline stored as a datetime-local string; converted to epoch seconds on submit.
-  const [deadline, setDeadline] = useState("");
-  const [amount, setAmount] = useState("");
-  const [minProviderReputation, setMinProviderReputation] = useState("");
+  // Prefilled to now+24h so the form is usable without typing.
+  const [deadline, setDeadline] = useState(() => defaultDeadline());
+  const [amount, setAmount] = useState("5");
+  const [minProviderReputation, setMinProviderReputation] = useState("0.5");
   const [currency, setCurrency] = useState<"usdc" | "mon">("usdc");
   const [wrapAmount, setWrapAmount] = useState("");
   const [decision, setDecision] = useState<TrustCheckResult["decision"] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [stepLabel, setStepLabel] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<`0x${string}` | null>(null);
-  const [nlInput, setNlInput] = useState("");
+  const [nlInput, setNlInput] = useState(
+    "帮我创建 5 USDC 的智能合约安全审计任务给审计 agent，1 天内完成，最低信誉 0.5",
+  );
   const [nlApplied, setNlApplied] = useState(false);
 
   const { isLoading: isConfirming } = useWaitForTransactionReceipt({
@@ -537,4 +540,12 @@ export default function NewJobPage() {
       <NewJobBody />
     </Suspense>
   );
+}
+
+// defaultDeadline returns now+24h as a datetime-local value (YYYY-MM-DDTHH:mm)
+// so the create-job form ships prefilled and is immediately usable.
+function defaultDeadline(): string {
+  const d = new Date(Date.now() + 24 * 3600 * 1000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }

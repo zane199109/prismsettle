@@ -80,7 +80,7 @@ export function useJobs(opts: UseJobsOptions = {}) {
     status,
     page = 1,
     size = 20,
-    intervalMs = 12000,
+    intervalMs = 6000,
     userAddress,
   } = opts;
 
@@ -98,7 +98,13 @@ export function useJobs(opts: UseJobsOptions = {}) {
       const filtered = status ? jobs.filter((j) => j.status === status) : jobs;
       return { items: filtered, total: filtered.length, page, size };
     },
-    { intervalMs, pauseWhenHidden: true },
+    {
+      intervalMs,
+      pauseWhenHidden: true,
+      // Revalidate when the tab regains focus — otherwise Next.js router
+      // cache can restore a stale (empty) jobs list after navigating back.
+      swr: { revalidateOnFocus: true },
+    },
   );
 
   return {

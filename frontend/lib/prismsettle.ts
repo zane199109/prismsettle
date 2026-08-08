@@ -95,6 +95,60 @@ export function getReputationHistory(params: {
   return api.get<ReputationHistoryResponse>("/reputation/history", params);
 }
 
+// --- Demo session (chat-style agent collaboration playback) ---
+
+export interface DemoMessageVO {
+  id: number;
+  step: number;
+  role: string; // buyer/provider/evaluator/system
+  content: string;
+  report: string; // full deliverable body (markdown), provider submits only
+  deliverable_hash: string; // on-chain keccak of the report
+  action: string;
+  tx_hash: string;
+  state: string;
+  created_at: number;
+}
+
+export interface DemoSessionVO {
+  session_id: string;
+  job_id: string;
+  title: string;
+  description: string;
+  amount: string;
+  token: string;
+  provider_agent: string;
+  state: string;
+  result: string;
+  created_at: number;
+}
+
+export function createDemoSession(body: {
+  title: string;
+  description?: string;
+  amount: string;
+  token?: string;
+  provider_agent?: string;
+  scenario?: string;
+}) {
+  return api.post<{ session_id: string; state: string }>("/demo/sessions", body);
+}
+
+export function getDemoSession(sessionId: string) {
+  return api.get<DemoSessionVO>(`/demo/sessions/${encodeURIComponent(sessionId)}`);
+}
+
+/** Most recent demo session that created the given job (history view). */
+export function getDemoSessionByJob(jobId: string) {
+  return api.get<{ session: DemoSessionVO | null }>("/demo/sessions", { job_id: jobId });
+}
+
+export function getDemoMessages(sessionId: string) {
+  return api.get<{ session_id: string; count: number; messages: DemoMessageVO[] }>(
+    `/demo/sessions/${encodeURIComponent(sessionId)}/messages`,
+  );
+}
+
 // FR-A04: GET /shards/activity
 // Backend returns {chain_name, count, shards: [{shard_id, validations, last_activity}]}.
 export interface ShardActivityResponse {

@@ -1,23 +1,25 @@
 "use client";
 
-// Wagmi + RainbowKit + Theme + shadcn providers.
-// Real Monad Testnet RPC and WalletConnect projectId wired (Phase 9).
+// Wagmi + Theme + shadcn providers.
+// Plain wagmi with the injected connector (browser extension wallet) — no
+// RainbowKit / WalletConnect Cloud remote config, so wallet connect works
+// fully offline and never 403s on api.web3modal.org.
 
-import { getDefaultConfig } from "@rainbow-me/rainbowkit";
-import { WagmiProvider } from "wagmi";
-import { RainbowKitProvider, darkTheme } from "@rainbow-me/rainbowkit";
+import { createConfig, http, WagmiProvider } from "wagmi";
+import { injected } from "wagmi/connectors";
 import { monadTestnet } from "wagmi/chains";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import "@rainbow-me/rainbowkit/styles.css";
 
 import { ThemeProvider } from "@/providers/theme-provider";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "@/components/ui/sonner";
 
-const config = getDefaultConfig({
-  appName: "PrismSettle",
-  projectId: process.env.NEXT_PUBLIC_WC_PROJECT_ID ?? "prismsettle-dev-placeholder",
+const config = createConfig({
   chains: [monadTestnet],
+  connectors: [injected()],
+  transports: {
+    [monadTestnet.id]: http("https://testnet-rpc.monad.xyz"),
+  },
   ssr: true,
 });
 
@@ -33,18 +35,10 @@ export function Providers({ children }: { children: React.ReactNode }) {
     >
       <WagmiProvider config={config}>
         <QueryClientProvider client={queryClient}>
-          <RainbowKitProvider
-            theme={darkTheme({
-              accentColor: "#8B5CF6", // prism-accent
-              accentColorForeground: "white",
-              borderRadius: "medium",
-            })}
-          >
-            <TooltipProvider>
-              {children}
-              <Toaster richColors position="bottom-right" />
-            </TooltipProvider>
-          </RainbowKitProvider>
+          <TooltipProvider>
+            {children}
+            <Toaster richColors position="bottom-right" />
+          </TooltipProvider>
         </QueryClientProvider>
       </WagmiProvider>
     </ThemeProvider>

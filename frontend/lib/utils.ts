@@ -34,9 +34,16 @@ export function formatScore(value: string | undefined | null): string {
 }
 
 // USDC / WMON token contract addresses (all deployed generations).
+// NOTE: v3-v5 MockUSDC are 6-decimals; v6 (0x83cb…) is 18-decimals (deployed
+// with the MockERC20 default) even though its symbol is still "USDC".
 const USDC_ADDRESSES = new Set([
-  "0x252e44550f8b9997901e5540fc0e1da52ab099c6", // v3 MockUSDC
-  "0x2bb06a30d464ca8e62563081f024e6380f0eb70b", // v4 MockUSDC
+  "0x252e44550f8b9997901e5540fc0e1da52ab099c6", // v3 MockUSDC (6)
+  "0x2bb06a30d464ca8e62563081f024e6380f0eb70b", // v4 MockUSDC (6)
+  "0x641419b3347523a26e828a550f4237547df29e0d", // v5 MockUSDC (6)
+]);
+// USDC-symbol tokens that are NOT 6-decimals (v6 deployed as 18).
+const USDC_LABEL_ADDRESSES = new Set([
+  "0x83cb612c10a27c09b7a5ab31b906560b880abd9c", // v6 MockUSDC (18)
 ]);
 const WMON_ADDRESS = "0xfb8bf4c1cc7a94c73d209a149ea2abea852bc541";
 
@@ -54,7 +61,7 @@ export function tokenDecimals(addr: string | undefined): number {
 export function tokenLabel(addr: string | undefined): string {
   if (!addr) return "tokens";
   const a = addr.toLowerCase();
-  if (USDC_ADDRESSES.has(a)) return "USDC";
+  if (USDC_ADDRESSES.has(a) || USDC_LABEL_ADDRESSES.has(a)) return "USDC";
   if (a === WMON_ADDRESS) return "WMON";
   return "tokens";
 }
@@ -80,6 +87,10 @@ const CAPABILITY_META: Record<string, { name: string; desc: string }> = {
   data_labeling: { name: "Data Labeler", desc: "数据标注与清洗服务" },
   translation: { name: "Translator", desc: "多语言翻译与本地化服务" },
   coding: { name: "Coding Agent", desc: "通用编程与代码审查服务" },
+  buyer: {
+    name: "Task Buyer",
+    desc: "任务发起与验收：创建任务、托管资金、验收交付物、发起争议",
+  },
 };
 
 function capabilityOf(metadata: string | null | undefined): string {
