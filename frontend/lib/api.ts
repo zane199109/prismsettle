@@ -75,11 +75,15 @@ export const api = {
     }),
 };
 
-// Convenience wrapper for paginated endpoints that follow the
-// {items, total, page, size} shape used by ListAgents / ListJobs.
+// Convenience wrapper for paginated endpoints. The backend envelope uses
+// `data.list` for the array; map it to the typed `items` shape.
 export async function getPaginated<T>(
   path: string,
   params: { page?: number; size?: number; chainName?: string; state?: string },
 ): Promise<Paginated<T>> {
-  return api.get<Paginated<T>>(path, params);
+  const data = await api.get<Paginated<T> & { list?: T[] }>(path, params);
+  if (data && !data.items && Array.isArray(data.list)) {
+    return { items: data.list, total: data.total, page: data.page, size: data.size };
+  }
+  return data as Paginated<T>;
 }
