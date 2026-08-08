@@ -230,6 +230,20 @@ PrismSettle/
 
 ---
 
+## 关键文档
+
+| 文档 | 说明 |
+|------|------|
+| [产品需求 PRD](docs/PRD.zh-CN.v1.0.md) | 产品需求文档（A2A 审计场景 · 全部功能需求） |
+| [系统设计 SD](docs/SD.zh-CN.v1.0.md) | 系统架构与详细设计 |
+| [演示编排器设计](docs/demo-orchestrator-design.md) | 实时协作演示编排器设计（仲裁/直接完成双场景剧本） |
+| [部署日志](docs/testnet-deploy-log.md) | 历次测试网部署记录（地址/环境/验证） |
+| [用户指南](docs/USER-GUIDE.zh-CN.v1.0.md) | 产品使用说明 |
+| [API 定义](docs/api-definitions.md) | 后端 REST API 定义 |
+| [合约审计报告](docs/audit-report.md) | 智能合约审计（2026-08-05） |
+
+---
+
 ## License
 
 MIT
