@@ -26,7 +26,7 @@ export interface UseAgentsOptions {
 export function useAgents(opts: UseAgentsOptions = {}) {
   const { chainName = CHAIN_NAME, page = 1, size = 10, intervalMs = 8000, userAddress } = opts;
   const key = `agents:${chainName ?? "all"}:${page}:${size}`;
-  const { data, error, isValidating, mutate } = usePoll<Paginated<AgentVO>>(
+  const { data, error, isValidating, mutate, isMounted } = usePoll<Paginated<AgentVO>>(
     key,
     async () => {
       const res = await listAgents({ chainName, page, size });
@@ -42,6 +42,7 @@ export function useAgents(opts: UseAgentsOptions = {}) {
     size: data?.size ?? size,
     error,
     isValidating,
+    isMounted,
     refresh: mutate,
   };
 }

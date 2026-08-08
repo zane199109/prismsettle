@@ -6,17 +6,18 @@
 import { motion } from "framer-motion";
 import { useAgents } from "@/hooks/useAgents";
 import { useJobs } from "@/hooks/useJobs";
+import { formatBigInt, tokenDecimals } from "@/lib/utils";
 
 const STATS = [
   { key: "agents", label: "Agents", suffix: "" },
   { key: "jobs", label: "Active Jobs", suffix: "" },
-  { key: "volume", label: "Total Volume", prefix: "$", suffix: "" },
+  { key: "volume", label: "Total Volume", suffix: " USDC" },
   { key: "completed", label: "Completed", suffix: "" },
 ];
 
 export function StatsSection() {
-  const { agents, isValidating: agentsLoading } = useAgents({ size: 999 });
-  const { jobs, isValidating: jobsLoading } = useJobs({ size: 999 });
+  const { agents, isValidating: agentsLoading } = useAgents({ size: 100 });
+  const { jobs, isValidating: jobsLoading } = useJobs({ size: 100 });
 
   const activeJobs = jobs.filter(
     (j) => j.status !== "Completed" && j.status !== "Refunded",
@@ -24,11 +25,16 @@ export function StatsSection() {
   const completedJobs = jobs.filter(
     (j) => j.status === "Completed",
   );
+  // Sum escrow amounts across jobs, using each token's own decimals.
+  const totalVolume = jobs.reduce((acc, j) => {
+    if (!j.amount) return acc;
+    return acc + Number(formatBigInt(j.amount, tokenDecimals(j.token)));
+  }, 0);
 
   const data: Record<string, string> = {
     agents: agents.length > 0 ? String(agents.length) : "--",
     jobs: activeJobs.length > 0 ? String(activeJobs.length) : "--",
-    volume: completedJobs.length > 0 ? String(completedJobs.length) : "--",
+    volume: totalVolume > 0 ? totalVolume.toFixed(0) : "--",
     completed: completedJobs.length > 0 ? String(completedJobs.length) : "--",
   };
 
@@ -46,7 +52,6 @@ export function StatsSection() {
               className="bg-[#0a0a0f] px-6 py-8 text-center"
             >
               <div className="text-2xl font-bold tracking-tight text-white">
-                {stat.prefix ?? ""}
                 {data[stat.key]}
                 {stat.suffix ?? ""}
               </div>

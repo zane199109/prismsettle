@@ -45,7 +45,7 @@ export default function AgentMarketplacePage() {
   const [category, setCategory] = useState<CategoryFilter>("All");
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 12;
-  const { agents, total, isValidating } = useAgents({ page, size: PAGE_SIZE, intervalMs: 10000 });
+  const { agents, total, isValidating, isMounted } = useAgents({ page, size: PAGE_SIZE, intervalMs: 10000 });
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -125,7 +125,7 @@ export default function AgentMarketplacePage() {
           ))}
         </div>
 
-        {isValidating && filtered.length === 0 ? (
+        {isMounted && isValidating && filtered.length === 0 ? (
           <SkeletonGrid />
         ) : filtered.length === 0 ? (
           <EmptyState />

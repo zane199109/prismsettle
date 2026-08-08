@@ -60,7 +60,7 @@ export default function JobsListPage() {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
 
-  const { jobs, total, isValidating, refresh } = useJobs({
+  const { jobs, total, isValidating, isMounted, refresh } = useJobs({
     status: status === "all" ? undefined : status,
     page,
     size: PAGE_SIZE,
@@ -149,7 +149,7 @@ export default function JobsListPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {isValidating && filtered.length === 0 ? (
+                {isMounted && isValidating && filtered.length === 0 ? (
                   Array.from({ length: 6 }).map((_, i) => (
                     <TableRow key={i} className="border-white/10">
                       <TableCell className="pl-6"><Skeleton className="h-4 w-24" /></TableCell>

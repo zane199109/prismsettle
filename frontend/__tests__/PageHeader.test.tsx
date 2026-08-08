@@ -24,13 +24,10 @@ describe("PageHeader", () => {
     expect(logoLink?.textContent).toBe("PrismSettle");
   });
 
-  it("renders all 6 navigation links", () => {
+  it("renders all 3 navigation links", () => {
     render(<PageHeader />);
     expect(screen.getByText("Agents")).toBeInTheDocument();
     expect(screen.getByText("Jobs")).toBeInTheDocument();
-    expect(screen.getByText("Dashboard")).toBeInTheDocument();
-    expect(screen.getByText("Validate")).toBeInTheDocument();
-    expect(screen.getByText("Arbitrate")).toBeInTheDocument();
     expect(screen.getByText("Events")).toBeInTheDocument();
   });
 
@@ -39,9 +36,6 @@ describe("PageHeader", () => {
     const links = [
       { label: "Agents", href: "/agents" },
       { label: "Jobs", href: "/jobs" },
-      { label: "Dashboard", href: "/dashboard" },
-      { label: "Validate", href: "/validator" },
-      { label: "Arbitrate", href: "/arbitrator" },
       { label: "Events", href: "/events" },
     ];
     for (const { label, href } of links) {

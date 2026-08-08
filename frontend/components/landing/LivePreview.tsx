@@ -24,12 +24,12 @@ import {
 } from "@/lib/utils";
 
 export function LivePreview() {
-  const { agents, isValidating: agentsLoading } = useAgents({
+  const { agents, isValidating: agentsLoading, isMounted } = useAgents({
     size: 3,
     intervalMs: 30000,
   });
   // Active = Pending (funded/assigned) or Submitted — anything not terminal.
-  const { jobs, isValidating: jobsLoading } = useJobs({
+  const { jobs, isValidating: jobsLoading, isMounted: jobsMounted } = useJobs({
     size: 3,
     intervalMs: 30000,
   });
@@ -70,7 +70,7 @@ export function LivePreview() {
               </Link>
             </div>
             <div className="space-y-3">
-              {agentsLoading && topAgents.length === 0 ? (
+              {isMounted && agentsLoading && topAgents.length === 0 ? (
                 Array.from({ length: 3 }).map((_, i) => (
                   <Skeleton key={i} className="h-20 rounded-xl" />
                 ))
@@ -137,7 +137,7 @@ export function LivePreview() {
               </Link>
             </div>
             <div className="space-y-3">
-              {jobsLoading && activeJobs.length === 0 ? (
+              {jobsMounted && jobsLoading && activeJobs.length === 0 ? (
                 Array.from({ length: 3 }).map((_, i) => (
                   <Skeleton key={i} className="h-20 rounded-xl" />
                 ))

@@ -632,8 +632,8 @@ function DisputePanel({ jobId, status, resolvedRuling }: { jobId: string; status
       </h2>
       <p className="mb-3 text-[11px] text-white/40">
         Either party (buyer or provider) may open a dispute within 24h of the latest submit. Both sides post a{" "}
-        <code className="text-white/60">dispute deposit</code> (5% of escrow); the losing side's deposit pays the
-        arbitrator, the winner's is returned, and the escrow goes 100% to the winner.
+        <code className="text-white/60">dispute deposit</code> (5% of escrow); the losing side&apos;s deposit pays the
+        arbitrator, the winner&apos;s is returned, and the escrow goes 100% to the winner.
       </p>
 
       {!isDisputed && !isResolved && (

@@ -41,7 +41,7 @@ export function useJobTimeline(
 ) {
   const { chainName = CHAIN_NAME, intervalMs = 3000 } = opts;
   const enabled = Boolean(jobId);
-  const { data, error, isValidating, mutate } = usePoll<JobTimelineItem[]>(
+  const { data, error, isValidating, mutate, isMounted } = usePoll<JobTimelineItem[]>(
     enabled ? `job-timeline:${chainName ?? "all"}:${jobId}` : null,
     async () => {
       const res = await getJobTimeline(jobId!, chainName);
@@ -61,6 +61,7 @@ export function useJobTimeline(
     timeline: data ?? [],
     error,
     isValidating,
+    isMounted,
     refresh: mutate,
   };
 }

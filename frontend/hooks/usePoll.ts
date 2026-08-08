@@ -9,6 +9,7 @@
 // sites.
 
 import useSWR, { SWRConfiguration } from "swr";
+import { useEffect, useState } from "react";
 
 export interface UsePollOptions<T> {
   // Polling interval in ms. 0 = no polling (one-shot fetch).
@@ -27,7 +28,13 @@ export function usePoll<T>(
   opts: UsePollOptions<T> = {},
 ) {
   const { intervalMs = 5000, pauseWhenHidden = true, swr } = opts;
-  return useSWR<T>(key, fetcher, {
+  // isMounted flips true only after client hydration. SSR renders isValidating
+  // as false while the client's first frame shows true — using it in a
+  // skeleton condition before hydration breaks the server/client match and
+  // throws React hydration errors. Gate loading UI on isMounted.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+  const { data, error, isValidating, mutate } = useSWR<T>(key, fetcher, {
     refreshInterval: intervalMs,
     revalidateOnFocus: false,
     revalidateOnReconnect: true,
@@ -38,4 +45,5 @@ export function usePoll<T>(
       document.visibilityState === "hidden",
     ...swr,
   });
+  return { data, error, isValidating, mutate, isMounted: mounted };
 }

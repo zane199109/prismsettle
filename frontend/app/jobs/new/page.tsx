@@ -9,7 +9,8 @@
 //   3. fundViaToken(jobId, amount, "0x")  // empty receipt = ERC-20 path
 // Then route to /jobs/[jobId].
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, Loader2 } from "lucide-react";
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract } from "wagmi";
@@ -359,7 +360,7 @@ function NewJobBody() {
               ) : (
                 <div className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-300">
                   This wallet has no registered agent yet. Register one on the{" "}
-                  <a href="/agents" className="underline">Agents page</a> to create jobs.
+                  <Link href="/agents" className="underline">Agents page</Link> to create jobs.
                 </div>
               )
             ) : (

@@ -85,7 +85,7 @@ export function useJobs(opts: UseJobsOptions = {}) {
   } = opts;
 
   const key = `jobs:${chainName ?? "all"}:${status ?? "all"}:${page}:${size}`;
-  const { data, error, isValidating, mutate } = usePoll<Paginated<JobVO>>(
+  const { data, error, isValidating, mutate, isMounted } = usePoll<Paginated<JobVO>>(
     key,
     async () => {
       const res = await listJobs({ chainName, contract: JOB_CONTRACT_ADDRESS, page, size });
@@ -114,6 +114,7 @@ export function useJobs(opts: UseJobsOptions = {}) {
     size: data?.size ?? size,
     error,
     isValidating,
+    isMounted,
     refresh: mutate,
   };
 }
