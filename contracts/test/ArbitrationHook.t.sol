@@ -458,14 +458,14 @@ contract ArbitrationHookTest is Test {
         vm.prank(address(mockJob));
         hook.recordReject(JOB_ID);
 
-        (,,, uint256 bd,) = hook.hookData(JOB_ID);
+        (,,, uint256 bd,,) = hook.hookData(JOB_ID);
         assertEq(bd, DEPOSIT, "reject deposit recorded");
 
         uint256 buyerBefore = token.balanceOf(buyer);
         vm.prank(address(mockJob));
         hook.releaseDeposits(JOB_ID);
         assertEq(token.balanceOf(buyer), buyerBefore + DEPOSIT, "deposit released");
-        (,,, uint256 bd2,) = hook.hookData(JOB_ID);
+        (,,, uint256 bd2,,) = hook.hookData(JOB_ID);
         assertEq(bd2, 0, "deposits cleared");
     }
 
@@ -474,7 +474,7 @@ contract ArbitrationHookTest is Test {
         vm.prank(buyer);
         hook.dispute(JOB_ID, REASON);
 
-        (,,, uint256 bd, uint256 pd) = hook.hookData(JOB_ID);
+        (,,, uint256 bd, uint256 pd,) = hook.hookData(JOB_ID);
         assertEq(bd, DEPOSIT, "buyer dispute deposit");
         assertEq(pd, DEPOSIT, "provider dispute deposit");
     }

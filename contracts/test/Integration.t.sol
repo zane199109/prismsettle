@@ -52,7 +52,7 @@ contract IntegrationTest is Test {
         facilitator = new MockX402Facilitator(address(token), FUND_AMOUNT);
         registry = new PrismSettleRegistry();
         hook = new ArbitrationHook(address(token));
-        job = new PrismSettleJob(address(token), address(facilitator));
+        job = new PrismSettleJob(address(token), address(facilitator), 60);
 
         // Hook 反向引用 + 注册仲裁池
         hook.setJobContract(address(job));
@@ -242,7 +242,7 @@ contract IntegrationTest is Test {
         assertEq(ruling, 1);
 
         // Warp past announcement period, then execute arbitration result
-        vm.warp(block.timestamp + job.ANNOUNCEMENT_PERIOD() + 1);
+        vm.warp(block.timestamp + job.announcementPeriod() + 1);
 
         uint256 buyerBefore = token.balanceOf(buyer);
         job.executeArbitrationResult(jobId);
@@ -273,7 +273,7 @@ contract IntegrationTest is Test {
         hook.resolveDispute(jobId, 2);
 
         // Warp past announcement period, then execute arbitration result
-        vm.warp(block.timestamp + job.ANNOUNCEMENT_PERIOD() + 1);
+        vm.warp(block.timestamp + job.announcementPeriod() + 1);
 
         uint256 provBefore = token.balanceOf(provider);
         job.executeArbitrationResult(jobId);
@@ -427,7 +427,7 @@ contract IntegrationTest is Test {
         hook.resolveDispute(jobId, 2);
 
         // Warp past announcement period, then execute arbitration result
-        vm.warp(block.timestamp + job.ANNOUNCEMENT_PERIOD() + 1);
+        vm.warp(block.timestamp + job.announcementPeriod() + 1);
 
         uint256 provBefore = token.balanceOf(provider);
         uint256 feeBefore = token.balanceOf(address(0xFEE));
@@ -468,7 +468,7 @@ contract IntegrationTest is Test {
         hook.resolveDispute(jobId, 1);
 
         // Warp past announcement period, then execute arbitration result
-        vm.warp(block.timestamp + job.ANNOUNCEMENT_PERIOD() + 1);
+        vm.warp(block.timestamp + job.announcementPeriod() + 1);
 
         uint256 buyerBefore = token.balanceOf(buyer);
         uint256 feeBefore = token.balanceOf(address(0xFEE));
@@ -506,7 +506,7 @@ contract IntegrationTest is Test {
         hook.resolveDispute(jobId, 2);
 
         // Warp past announcement period, then execute arbitration result
-        vm.warp(block.timestamp + job.ANNOUNCEMENT_PERIOD() + 1);
+        vm.warp(block.timestamp + job.announcementPeriod() + 1);
 
         uint256 provBefore = token.balanceOf(provider);
         job.executeArbitrationResult(jobId);

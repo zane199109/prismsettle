@@ -36,9 +36,9 @@ contract X402IntegrationTest is Test {
         registry.seedAgent(AGENT_PROVIDER, uint96(0.7e18));
 
         // Two Job instances: one with facilitator, one without (fallback-only).
-        jobWithFacilitator = new PrismSettleJob(address(token), address(facilitator));
+        jobWithFacilitator = new PrismSettleJob(address(token), address(facilitator), 60);
         jobWithFacilitator.setRegistry(address(registry));
-        jobNoFacilitator = new PrismSettleJob(address(token), address(0));
+        jobNoFacilitator = new PrismSettleJob(address(token), address(0), 60);
         jobNoFacilitator.setRegistry(address(registry));
 
         token.mint(buyer, 10_000 ether);

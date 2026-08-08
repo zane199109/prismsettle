@@ -71,6 +71,7 @@ contract ArbitrationHook is AccessControl {
         HookState state;
         uint256 buyerDeposit; // cumulative reject/dispute deposits paid by buyer
         uint256 providerDeposit; // dispute deposit paid by provider
+        bool rejectDepositPaid; // only the FIRST reject posts a deposit
     }
 
     /// @dev Per-arbitrator configuration. Each arbitrator sets their own
@@ -137,6 +138,7 @@ contract ArbitrationHook is AccessControl {
     event ArbitratorUnregistered(address indexed arbitrator);
     event ArbitratorSelected(uint256 indexed jobId, address indexed arbitrator, uint256 score);
     event RejectDepositPaid(uint256 indexed jobId, address indexed buyer, uint256 amount);
+    event RejectRecorded(uint256 indexed jobId, string info);
     event DepositsReleased(uint256 indexed jobId, uint256 buyerAmount, uint256 providerAmount);
     event DepositsSettled(uint256 indexed jobId, uint8 ruling, uint256 forfeitedAmount, address forfeitedBy);
 
@@ -228,14 +230,22 @@ contract ArbitrationHook is AccessControl {
     }
 
     /// @notice Called by the Job contract when the buyer rejects a deliverable.
-    ///         The buyer posts a deposit (amount × DEPOSIT_BPS) per reject —
-    ///         an economic brake on infinite rework loops. Deposits are
-    ///         released if the job settles without arbitration, or forfeited
-    ///         to the arbitrator if the buyer loses a dispute.
+    ///         Only the FIRST reject posts a deposit (amount × DEPOSIT_BPS) —
+    ///         an economic brake on infinite rework loops without penalizing
+    ///         legitimate rework cycles. Subsequent rejects are free (the
+    ///         deposit already posted covers the anti-infinite-rework intent).
+    ///         Deposits are released if the job settles without arbitration,
+    ///         or forfeited to the arbitrator if the buyer loses a dispute.
     function recordReject(uint256 jobId) external {
         require(msg.sender == jobContract, "PrismSettle: not job");
         HookData storage h = hookData[jobId];
         require(h.state == HookState.None, "PrismSettle: already disputed");
+
+        // Only the first reject posts a deposit; later rejects are free.
+        if (h.rejectDepositPaid) {
+            emit RejectRecorded(jobId, "subsequent reject, deposit already posted");
+            return;
+        }
 
         address buyer = IPrismSettleJobView(jobContract).getJobBuyer(jobId);
         uint256 amount = IPrismSettleJobView(jobContract).getJobAmount(jobId);
@@ -243,6 +253,7 @@ contract ArbitrationHook is AccessControl {
         require(deposit > 0, "Arbitration: zero deposit");
         require(_jobToken(jobId).transferFrom(buyer, address(this), deposit), "Arbitration: deposit failed");
         h.buyerDeposit += deposit;
+        h.rejectDepositPaid = true;
         emit RejectDepositPaid(jobId, buyer, deposit);
     }
 

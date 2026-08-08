@@ -41,7 +41,7 @@ contract PrismSettleJobTest is Test {
         token = new MockERC20("MockUSDC", "USDC");
         facilitator = new MockX402Facilitator(address(token), FUND_AMOUNT);
         hook = new ArbitrationHook(address(token));
-        job = new PrismSettleJob(address(token), address(facilitator));
+        job = new PrismSettleJob(address(token), address(facilitator), 60);
 
         // Deploy a real registry and register the provider agent.
         registry = new PrismSettleRegistry();
@@ -453,7 +453,7 @@ contract PrismSettleJobTest is Test {
 
         // Buyer refunds after the announcement period — deadline bypassed
         // (escrow settled in FULL via executeArbitrationResult).
-        vm.warp(block.timestamp + job.ANNOUNCEMENT_PERIOD() + 1);
+        vm.warp(block.timestamp + job.announcementPeriod() + 1);
         uint256 buyerBefore = token.balanceOf(buyer);
         job.executeArbitrationResult(jobId);
         assertEq(token.balanceOf(buyer), buyerBefore + FUND_AMOUNT);
@@ -584,7 +584,7 @@ contract PrismSettleJobTest is Test {
         hook.resolveDispute(jobId, 1);
         assertEq(token.balanceOf(feeRecipient), feeBefore + DEPOSIT, "arbitrator fee = provider deposit");
 
-        vm.warp(block.timestamp + job.ANNOUNCEMENT_PERIOD() + 1);
+        vm.warp(block.timestamp + job.announcementPeriod() + 1);
         uint256 buyerBefore = token.balanceOf(buyer);
         job.executeArbitrationResult(jobId);
         assertEq(token.balanceOf(buyer), buyerBefore + FUND_AMOUNT, "full escrow refund");
@@ -605,7 +605,7 @@ contract PrismSettleJobTest is Test {
         hook.resolveDispute(jobId, 1);
         assertEq(token.balanceOf(feeRecipient), feeBefore + DEPOSIT, "deposit fixed at 5%");
 
-        vm.warp(block.timestamp + job.ANNOUNCEMENT_PERIOD() + 1);
+        vm.warp(block.timestamp + job.announcementPeriod() + 1);
         uint256 buyerBefore = token.balanceOf(buyer);
         job.executeArbitrationResult(jobId);
         assertEq(token.balanceOf(buyer), buyerBefore + FUND_AMOUNT, "full escrow refund");
@@ -626,7 +626,7 @@ contract PrismSettleJobTest is Test {
         hook.resolveDispute(jobId, 2);
         assertEq(token.balanceOf(feeRecipient), feeBefore + DEPOSIT, "arbitrator fee = buyer deposit");
 
-        vm.warp(block.timestamp + job.ANNOUNCEMENT_PERIOD() + 1);
+        vm.warp(block.timestamp + job.announcementPeriod() + 1);
         uint256 provBefore = token.balanceOf(provider);
         job.executeArbitrationResult(jobId);
         assertEq(token.balanceOf(provider), provBefore + FUND_AMOUNT, "full escrow payout");
@@ -647,7 +647,7 @@ contract PrismSettleJobTest is Test {
         hook.resolveDispute(jobId, 2);
         assertEq(token.balanceOf(feeRecipient), feeBefore + DEPOSIT, "deposit fixed at 5%");
 
-        vm.warp(block.timestamp + job.ANNOUNCEMENT_PERIOD() + 1);
+        vm.warp(block.timestamp + job.announcementPeriod() + 1);
         uint256 provBefore = token.balanceOf(provider);
         job.executeArbitrationResult(jobId);
         assertEq(token.balanceOf(provider), provBefore + FUND_AMOUNT, "full escrow payout");
@@ -673,7 +673,7 @@ contract PrismSettleJobTest is Test {
         hook.resolveDispute(jobId, 1);
         assertEq(token.balanceOf(address(0xFEE)), feeBefore + DEPOSIT, "arbitrator fee = provider deposit");
 
-        vm.warp(block.timestamp + job.ANNOUNCEMENT_PERIOD() + 1);
+        vm.warp(block.timestamp + job.announcementPeriod() + 1);
         uint256 buyerBefore = token.balanceOf(buyer);
         job.executeArbitrationResult(jobId);
         assertEq(token.balanceOf(buyer), buyerBefore + FUND_AMOUNT, "full escrow refund");
@@ -702,7 +702,7 @@ contract PrismSettleJobTest is Test {
         vm.expectRevert("PrismSettle: announcement period not passed");
         job.executeArbitrationResult(jobId);
 
-        vm.warp(block.timestamp + job.ANNOUNCEMENT_PERIOD() + 1);
+        vm.warp(block.timestamp + job.announcementPeriod() + 1);
         uint256 provBefore = token.balanceOf(provider);
         job.executeArbitrationResult(jobId);
         assertEq(token.balanceOf(provider), provBefore + FUND_AMOUNT, "full escrow payout");
@@ -758,7 +758,7 @@ contract PrismSettleJobTest is Test {
         job.reject(jobId, keccak256("needs more detail"));
         assertEq(token.balanceOf(buyer), buyerBefore - DEPOSIT, "reject deposit deducted");
 
-        (,,, uint256 bd, uint256 pd) = hook.hookData(jobId);
+        (,,, uint256 bd, uint256 pd,) = hook.hookData(jobId);
         assertEq(bd, DEPOSIT, "buyer reject deposit recorded");
         assertEq(pd, 0, "no provider deposit yet");
 
@@ -789,7 +789,7 @@ contract PrismSettleJobTest is Test {
         vm.prank(provider);
         hook.dispute(jobId, keccak256("work is complete"));
 
-        (,,, uint256 bd,) = hook.hookData(jobId);
+        (,,, uint256 bd,,) = hook.hookData(jobId);
         assertEq(bd, 2 * DEPOSIT, "reject + dispute deposits");
 
         uint256 feeBefore = token.balanceOf(address(0xFEE));
@@ -861,7 +861,7 @@ contract PrismSettleJobTest is Test {
         vm.prank(buyer);
         hook.dispute(jobId, keccak256("dispute"));
 
-        (,,, uint256 bd, uint256 pd) = hook.hookData(jobId);
+        (,,, uint256 bd, uint256 pd,) = hook.hookData(jobId);
         assertEq(bd, DEPOSIT, "buyer deposit in WMON");
         assertEq(pd, DEPOSIT, "provider deposit in WMON");
         assertEq(wmon.balanceOf(address(hook)), 2 * DEPOSIT, "Hook holds WMON deposits");

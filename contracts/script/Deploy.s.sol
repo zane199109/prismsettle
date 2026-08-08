@@ -22,6 +22,10 @@ import {MockERC20} from "../src/mocks/MockERC20.sol";
 ///         Validator 质押（可选）：
 ///           - 读 VALIDATOR_ADDRESS + VALIDATOR_STAKE_WEI，未设置则跳过
 contract Deploy is Script {
+    // Announcement period after dispute resolution (seconds). 20s keeps the
+    // demo arbitration flow inside the 3-minute window; production can raise.
+    uint256 internal constant ANNOUNCEMENT_PERIOD = 20;
+
     // 4 个官方 Agent 的 agentId（Seed Phase，对应 PRD FR-C09）
     // AGENT_AUDITOR_SENIOR (0x3333) 兼具官方 Agent 和 Worker 双重身份，声誉 0.9e18
     uint256 internal constant AGENT_DEFI = 0x1111;
@@ -67,7 +71,7 @@ contract Deploy is Script {
         ArbitrationHook hook = new ArbitrationHook(address(token));
 
         // 4. PrismSettleJob（注入 token + facilitator）
-        PrismSettleJob job = new PrismSettleJob(address(token), facilitator);
+        PrismSettleJob job = new PrismSettleJob(address(token), facilitator, ANNOUNCEMENT_PERIOD);
 
         // 5. Hook 反向引用：setJobContract + setRegistryContract（一次性）
         hook.setJobContract(address(job));

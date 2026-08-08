@@ -68,8 +68,9 @@ contract PrismSettleJob is AccessControl {
     bytes32 public constant COMMERCE_EVALUATOR_ROLE = keccak256("COMMERCE_EVALUATOR_ROLE");
 
     /// @dev Announcement period after dispute resolution before funds can
-    ///      be released. 60 seconds for demo/test; adjust for production.
-    uint256 public constant ANNOUNCEMENT_PERIOD = 60 seconds;
+    ///      be released. Configurable via constructor / setAnnouncementPeriod
+    ///      (60s demo default; shorten for fast demo days).
+    uint256 public announcementPeriod;
 
     // ---------------------------------------------------------------------
     // Storage
@@ -111,15 +112,24 @@ contract PrismSettleJob is AccessControl {
     event DisputeResolvedAnnounced(uint256 indexed jobId, uint8 ruling, uint256 resolvedAt, uint256 releaseAt);
     event ArbitrationExecuted(uint256 indexed jobId, uint8 ruling, uint256 amount);
     event Rejected(uint256 indexed jobId, address buyer, bytes32 reasonHash);
+    event AnnouncementPeriodUpdated(uint256 period);
 
     // ---------------------------------------------------------------------
     // Constructor
     // ---------------------------------------------------------------------
 
-    constructor(address token, address hookFacilitator) {
+    constructor(address token, address hookFacilitator, uint256 announcementPeriod_) {
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
         paymentToken = IERC20(token);
         facilitator = hookFacilitator; // may be address(0)
+        announcementPeriod = announcementPeriod_ == 0 ? 60 : announcementPeriod_;
+    }
+
+    /// @notice Adjust the post-resolution announcement period (admin only).
+    function setAnnouncementPeriod(uint256 period) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        require(period > 0, "PrismSettle: zero period");
+        announcementPeriod = period;
+        emit AnnouncementPeriodUpdated(period);
     }
 
     // ---------------------------------------------------------------------
@@ -411,7 +421,7 @@ contract PrismSettleJob is AccessControl {
         j.state = JobState.DisputeResolved;
         j.disputeResolvedAt = block.timestamp;
 
-        uint256 releaseAt = block.timestamp + ANNOUNCEMENT_PERIOD;
+        uint256 releaseAt = block.timestamp + announcementPeriod;
         emit DisputeResolvedAnnounced(jobId, ruling, block.timestamp, releaseAt);
     }
 
@@ -429,7 +439,7 @@ contract PrismSettleJob is AccessControl {
     function executeArbitrationResult(uint256 jobId) external {
         Job storage j = shardJobs[uint8(jobId & 0xFF)][jobId];
         require(j.state == JobState.DisputeResolved, "PrismSettle: bad state");
-        require(block.timestamp >= j.disputeResolvedAt + ANNOUNCEMENT_PERIOD, "PrismSettle: announcement period not passed");
+        require(block.timestamp >= j.disputeResolvedAt + announcementPeriod, "PrismSettle: announcement period not passed");
         require(j.hook != address(0), "PrismSettle: no hook");
 
         // Query the Hook for the ruling.

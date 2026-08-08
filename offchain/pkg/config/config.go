@@ -50,6 +50,8 @@ type EvaluatorConfig struct {
 	RegistryAddr  string `mapstructure:"registry_addr"`   // PrismSettleRegistry contract address
 	JobAddr       string `mapstructure:"job_addr"`        // PrismSettleJob contract address
 	HookAddr      string `mapstructure:"hook_addr"`       // ArbitrationHook contract address
+	PaymentToken  string `mapstructure:"payment_token"`   // default payment token (USDC mock)
+	AnnouncementWaitSec int `mapstructure:"announcement_wait_sec"` // demo wait before executing arbitration (>= on-chain period)
 	PollInterval  int    `mapstructure:"poll_interval"`   // Evaluator poll interval (seconds), default 2
 	BatchSize     int    `mapstructure:"batch_size"`      // Evaluator batch size, default 20
 	KeeperTickSec int    `mapstructure:"keeper_tick_sec"` // Keeper tick period (seconds), default 30
