@@ -194,33 +194,24 @@ func (s *ChainEventSource) AgentIDFor(ctx context.Context, providerAddr string) 
 		return nil, fmt.Errorf("event_source: provider address is empty")
 	}
 	// The agent_registry table stores Owner = From (provider). We need the
-	// AgentID (To column). List paginated until we find the owner.
-	// For small agent counts this is fine; for large deployments, add an
-	// Owner index to the table (Phase 10 optimization).
-	page := 1
-	size := 100
-	for {
-		records, total, err := s.agentDB.List(ctx, s.cfg.ChainName, page, size)
-		if err != nil {
-			return nil, fmt.Errorf("event_source: list agents: %w", err)
-		}
-		for _, r := range records {
-			if strings.EqualFold(r.Owner, providerAddr) {
-				id := new(big.Int)
-				// SetString returns (nil, false) on parse failure; without
-				// this check a malformed AgentID would silently become 0 and
-				// the Evaluator would call submitValidation with agentId=0,
-				// which either reverts on-chain or corrupts reputation data.
-				if _, ok := id.SetString(strings.TrimPrefix(r.AgentID, "0x"), 16); !ok {
-					return nil, fmt.Errorf("event_source: invalid agent id hex %q for provider %s", r.AgentID, providerAddr)
-				}
-				return id, nil
+	// AgentID (To column). List returns all rows (small agent counts; for
+	// large deployments add an Owner index — Phase 10 optimization).
+	records, err := s.agentDB.List(ctx, s.cfg.ChainName)
+	if err != nil {
+		return nil, fmt.Errorf("event_source: list agents: %w", err)
+	}
+	for _, r := range records {
+		if strings.EqualFold(r.Owner, providerAddr) {
+			id := new(big.Int)
+			// SetString returns (nil, false) on parse failure; without
+			// this check a malformed AgentID would silently become 0 and
+			// the Evaluator would call submitValidation with agentId=0,
+			// which either reverts on-chain or corrupts reputation data.
+			if _, ok := id.SetString(strings.TrimPrefix(r.AgentID, "0x"), 16); !ok {
+				return nil, fmt.Errorf("event_source: invalid agent id hex %q for provider %s", r.AgentID, providerAddr)
 			}
+			return id, nil
 		}
-		if int64(page*size) >= total {
-			break
-		}
-		page++
 	}
 	return nil, fmt.Errorf("event_source: agent not registered for provider %s", providerAddr)
 }

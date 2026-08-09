@@ -55,14 +55,16 @@ func TestPrismSettleJobParser_ParseJobCreated(t *testing.T) {
 	deadline := uint64(2_000_000_000)
 	hook := common.HexToAddress("0xH00K")
 	minRep := uint64(0.7e18)
+	paymentToken := common.HexToAddress("0xUSDC")
 
-	// Layout: buyer(32) | deadline(32) | hook(32) | minProviderReputation(32) = 128 bytes
+	// Layout: buyer(32) | deadline(32) | hook(32) | minProviderReputation(32) | paymentToken(32) = 160 bytes
 	// Solidity ABI right-aligns addresses in 32-byte slots.
-	data := make([]byte, 128)
+	data := make([]byte, 160)
 	copy(data[12:32], buyer.Bytes())
 	new(big.Int).SetUint64(deadline).FillBytes(data[32:64])
 	copy(data[76:96], hook.Bytes())
 	new(big.Int).SetUint64(minRep).FillBytes(data[96:128])
+	copy(data[140:160], paymentToken.Bytes())
 
 	log := types.Log{
 		Address: common.HexToAddress("0xJobContract"),

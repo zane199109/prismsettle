@@ -31,7 +31,7 @@ func (h *DemoHandler) RegisterRoutes(g *gin.RouterGroup) {
 
 // listByJob returns the most recent demo session for a job (history view).
 func (h *DemoHandler) listByJob(c *gin.Context) {
-	jobID := c.Query("job_id")
+	jobID := normalizeJobID(c.Query("job_id"))
 	if jobID == "" {
 		response.Fail(c, errno.ErrInvalidParam.Code, "missing job_id")
 		return
@@ -68,6 +68,7 @@ type createSessionReq struct {
 	ProviderAgent string `json:"provider_agent"` // senior/junior/rookie
 	Scenario      string `json:"scenario"`       // arbitration (default) | direct
 	MaxRejects    int    `json:"max_rejects"`
+	JobID         string `json:"job_id"` // resume an existing job instead of creating one
 }
 
 func (h *DemoHandler) createSession(c *gin.Context) {
@@ -92,6 +93,7 @@ func (h *DemoHandler) createSession(c *gin.Context) {
 		ProviderAgent: req.ProviderAgent,
 		Scenario:      req.Scenario,
 		MaxRejects:    req.MaxRejects,
+		JobID:         req.JobID,
 	})
 	if err != nil {
 		response.HandleError(c, err)

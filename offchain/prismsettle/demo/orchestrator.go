@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
 	"github.com/zane/web3-offchain/model"
@@ -56,6 +57,10 @@ type SessionParams struct {
 	ProviderAgent string   // senior / junior / rookie
 	Scenario      string   // arbitration (default) | direct
 	MaxRejects    int      // unused now (script fixed at 2); kept for future
+	// JobID resumes an EXISTING job (hex 0x… or decimal) instead of creating
+	// a new one: the orchestrator skips createAndFund and drives the script
+	// against this job. Only Created/Funded states can be resumed.
+	JobID string
 }
 
 // Orchestrator drives a demo session: LLM speech → on-chain action → message.
@@ -120,6 +125,13 @@ func (o *Orchestrator) Start(ctx context.Context, p SessionParams) (*model.DemoS
 		// Default to the configured payment token when the client omits it.
 		p.Token = o.actions.TokenAddr.Hex()
 	}
+	// Token whitelist: default USDC mock or WMON (when configured).
+	if err := o.actions.ValidateToken(common.HexToAddress(p.Token)); err != nil {
+		o.mu.Lock()
+		o.active = false
+		o.mu.Unlock()
+		return nil, fmt.Errorf("unsupported token %s", p.Token)
+	}
 	if p.Scenario == "" {
 		p.Scenario = "arbitration"
 	}
@@ -133,6 +145,7 @@ func (o *Orchestrator) Start(ctx context.Context, p SessionParams) (*model.DemoS
 		Scenario:      p.Scenario,
 		State:         "created",
 		MaxRejects:    p.MaxRejects,
+		JobID:         p.JobID,
 	}
 	if err := o.repo.CreateSession(ctx, sess); err != nil {
 		o.mu.Lock()
@@ -166,39 +179,126 @@ func (o *Orchestrator) run(sess *model.DemoSession) {
 		o.mu.Unlock()
 	}()
 	ctx := context.Background()
-	amount := mustBig(sess.Amount)
 
-	// Step 0: create + fund (no LLM needed for the tx itself; message is
-	// system-generated, then the script continues).
-	sess.JobID = ""
-	msg := &model.DemoMessage{
-		SessionID: sess.ID,
-		Step:      0,
-		Role:      "system",
-		Content:   fmt.Sprintf("演示开始：任务「%s」创建并托管 %s（%s）", sess.Title, formatAmount(amount), shortAddr(sess.Token)),
-		Action:    "create_and_fund",
-		State:     "created",
-	}
-	_ = o.repo.AppendMessage(ctx, msg)
-
-	// Top up mock funds (escrow + deposits) for all demo roles.
-	if err := o.actions.EnsureFunds(ctx, amount); err != nil {
-		o.fail(ctx, sess, 0, "ensure_funds", err)
+	// Demo wallets burn MON on every script step; after many runs their gas
+	// runs out and every write tx fails signer-side. Top up before starting.
+	if err := o.actions.EnsureNativeGas(ctx); err != nil {
+		o.fail(ctx, sess, 0, "ensure_gas", err)
 		return
 	}
 
-	jobID, _, err := o.actions.CreateAndFund(ctx, o.buyerAgentID, uint64(time.Now().Unix())+3600, new(big.Int).SetUint64(500_000_000_000_000_000), amount)
-	if err != nil {
-		o.fail(ctx, sess, 0, "create_and_fund", err)
-		return
+	var jobID *big.Int
+	var amount *big.Int
+	var symbol string
+
+	if sess.JobID == "" {
+		// ---- New-task path: create + fund, then run the script. ----
+		amount = mustBig(sess.Amount)
+		token := common.HexToAddress(sess.Token)
+		symbol = o.actions.tokenSymbol(token)
+
+		msg := &model.DemoMessage{
+			SessionID: sess.ID,
+			Step:      0,
+			Role:      "system",
+			Content:   fmt.Sprintf("演示开始：任务「%s」创建并托管 %s %s", sess.Title, formatAmount(amount), symbol),
+			Action:    "create_and_fund",
+			State:     "created",
+		}
+		_ = o.repo.AppendMessage(ctx, msg)
+
+		// Top up mock funds (escrow + deposits) for all demo roles.
+		if err := o.actions.EnsureFunds(ctx, amount, token); err != nil {
+			o.fail(ctx, sess, 0, "ensure_funds", err)
+			return
+		}
+
+		// minRep = 0.85e18: senior (0.90) clears the bar, junior (0.80) and
+		// rookie (0.70) fail with a real on-chain "reputation too low" revert —
+		// the demo's third grab-failure reason.
+		created, _, err := o.actions.CreateAndFund(ctx, o.buyerAgentID, uint64(time.Now().Unix())+3600, new(big.Int).SetUint64(850_000_000_000_000_000), amount, token)
+		if err != nil {
+			o.fail(ctx, sess, 0, "create_and_fund", err)
+			return
+		}
+		jobID = created
+		sess.JobID = fmt.Sprintf("0x%064x", jobID)
+		_ = o.repo.UpdateSession(ctx, sess)
+		o.repo.AppendMessage(ctx, &model.DemoMessage{
+			SessionID: sess.ID, Step: 0, Role: "system",
+			Content:  fmt.Sprintf("任务已创建，jobId %s…，%s %s 已托管", shortID(jobID), formatAmount(amount), symbol),
+			Action:   "create_and_fund", State: "funded",
+		})
+	} else {
+		// ---- Existing-task path: resume the job the user just created. ----
+		id := mustBig(sess.JobID)
+		// Normalize the stored job_id to the canonical 0x64hex form (the
+		// front-end may have passed the raw decimal) so session lookups by
+		// job stay consistent across URL formats.
+		sess.JobID = fmt.Sprintf("0x%064x", id)
+		st, err := o.actions.ReadJobState(ctx, id)
+		if err != nil {
+			o.fail(ctx, sess, 0, "resume", fmt.Errorf("读取任务链上状态失败：%w", err))
+			return
+		}
+		// 1) Only Created(0)/Funded(1) can be driven further. Anything later
+		//    (assigned/submitted/…) is mid-flight and cannot be resumed.
+		if st.State > 1 {
+			o.fail(ctx, sess, 0, "resume", fmt.Errorf(
+				"该任务已被接单/已进入交付阶段（链上状态 %d），无法在此继续演示——请去接其他任务", st.State))
+			return
+		}
+		// 2) reject/complete are signed by the demo wallet — the job must
+		//    have been created by it.
+		if !strings.EqualFold(st.Buyer.Hex(), o.actions.BuyerAddress().Hex()) {
+			o.fail(ctx, sess, 0, "resume", fmt.Errorf(
+				"该任务不是演示钱包创建的（buyer=%s），无法推进——请用演示钱包创建任务", st.Buyer.Hex()))
+			return
+		}
+		// 3) Real escrow amount + currency come from the chain.
+		amount = st.Amount
+		if amount == nil || amount.Sign() == 0 {
+			amount = mustBig(sess.Amount) // fallback to the form value
+		}
+		token, err := o.actions.ReadJobToken(ctx, id)
+		if err != nil {
+			o.fail(ctx, sess, 0, "resume", fmt.Errorf("读取任务币种失败：%w", err))
+			return
+		}
+		symbol = o.actions.tokenSymbol(token)
+		sess.Token = token.Hex()
+		jobID = id
+
+		o.repo.AppendMessage(ctx, &model.DemoMessage{
+			SessionID: sess.ID, Step: 0, Role: "system",
+			Content: fmt.Sprintf("演示开始：基于当前任务继续推进（jobId %s…，托管 %s %s）", shortID(id), formatAmount(amount), symbol),
+			Action:  "create_and_fund", State: "created",
+		})
+
+		if st.State == 0 {
+			// Escrow not posted yet — top up the buyer and fund the job.
+			if err := o.actions.EnsureFunds(ctx, amount, token); err != nil {
+				o.fail(ctx, sess, 0, "ensure_funds", err)
+				return
+			}
+			if _, err := o.actions.FundExisting(ctx, id, amount, token); err != nil {
+				o.fail(ctx, sess, 0, "fund", err)
+				return
+			}
+			o.repo.AppendMessage(ctx, &model.DemoMessage{
+				SessionID: sess.ID, Step: 0, Role: "system",
+				Content: fmt.Sprintf("任务已托管：%s %s", formatAmount(amount), symbol),
+				Action:  "create_and_fund", State: "funded",
+			})
+		} else {
+			o.repo.AppendMessage(ctx, &model.DemoMessage{
+				SessionID: sess.ID, Step: 0, Role: "system",
+				Content: "任务已托管（沿用现有托管资金），开始推进。",
+				Action:  "create_and_fund", State: "funded",
+			})
+		}
+		_ = o.repo.UpdateSession(ctx, sess)
 	}
-	sess.JobID = fmt.Sprintf("0x%064x", jobID)
-	_ = o.repo.UpdateSession(ctx, sess)
-	o.repo.AppendMessage(ctx, &model.DemoMessage{
-		SessionID: sess.ID, Step: 0, Role: "system",
-		Content:  fmt.Sprintf("任务已创建，jobId %s…，5 USDC 已托管", shortID(jobID)),
-		Action:   "create_and_fund", State: "funded",
-	})
 
 	for i, step := range demoScript {
 		if sess.Scenario == "direct" {
@@ -245,45 +345,77 @@ func (o *Orchestrator) run(sess *model.DemoSession) {
 func (o *Orchestrator) executeStep(ctx context.Context, sess *model.DemoSession, stepNo int, step scriptStep) error {
 	switch step.Action {
 	case "grab":
-		// Grab competition — three real outcomes:
-		//   1. junior: mismatched agent ID → ownership check reverts (not eligible)
-		//   2. senior: correct agent ID → wins the race
-		//   3. rookie: correct agent ID but the job is already taken → slow
-		o.msg(ctx, sess, stepNo, step, "抢单竞争开始：3 个审计 Agent 同时竞争接单…", "")
-		// 1) junior loses on eligibility.
-		if _, err := o.actions.GrabCompeting(ctx, mustBig(sess.JobID), o.actions.RookieAgentID(), o.actions.JuniorAuth()); err != nil {
-			o.repo.AppendMessage(ctx, &model.DemoMessage{
-				SessionID: sess.ID, Step: stepNo, Role: "system",
-				Content: "❌ junior 抢单失败：不符合接单资格（归属校验不通过）",
-				Action:  "grab_failed", State: "assigned",
-			})
+		o.msg(ctx, sess, stepNo, step, "抢单竞争开始：3 个 Agent 同时竞争接单…", "")
+		job := mustBig(sess.JobID)
+		// Pick the competition script by preflighting junior's grab
+		// (eth_call, no gas): the failure reason decides who loses and how,
+		// so the three failure reasons stay distinct for ANY job minRep:
+		//   script A: junior → reputation too low; senior wins; rookie slow
+		//   script B: junior → not owner (wrong id); senior wins; rookie slow
+		//   script C: everyone eligible → senior grabs first; junior slow;
+		//             rookie loses on ownership (wrong id)
+		pre := o.actions.PreflightGrab(ctx, job, o.actions.JuniorAgentID(), o.actions.JuniorAuth().From)
+		preMsg := ""
+		if pre != nil {
+			preMsg = pre.Error()
 		}
-		// 2) senior wins.
-		reply, err := o.speak(ctx, step.Role, "接单说明", sess, "任务已托管，你准备接单。")
-		if err != nil {
-			reply = fallbackReply(step.Role, "我来接单。声誉符合要求。")
+		seniorWins := func() error {
+			reply, err := o.speak(ctx, step.Role, "接单说明", sess, "任务已托管，你准备接单。")
+			if err != nil {
+				reply = fallbackReply(step.Role, "我来接单。声誉符合要求。")
+			}
+			tx, err := o.actions.Grab(ctx, job, o.providerAgentID)
+			if err != nil {
+				return err
+			}
+			return o.msg(ctx, sess, stepNo, step, reply.Content, tx)
 		}
-		tx, err := o.actions.Grab(ctx, mustBig(sess.JobID), o.providerAgentID)
-		if err != nil {
-			return err
+		switch {
+		case strings.Contains(preMsg, "reputation too low"):
+			// Script A: junior fails on reputation.
+			if _, err := o.actions.GrabCompeting(ctx, job, o.actions.JuniorAgentID(), o.actions.JuniorAuth()); err != nil {
+				appendGrabFailed(ctx, o, sess, stepNo, "junior", err)
+			}
+			if err := seniorWins(); err != nil {
+				return err
+			}
+			// rookie too slow — the job is already assigned.
+			if _, err := o.actions.GrabCompeting(ctx, job, o.actions.RookieAgentID(), o.actions.RookieAuth()); err != nil {
+				appendGrabFailed(ctx, o, sess, stepNo, "rookie", err)
+			}
+			return nil
+		case strings.Contains(preMsg, "not owner"):
+			// Script B: junior loses on ownership (mismatched id).
+			if _, err := o.actions.GrabCompeting(ctx, job, o.actions.RookieAgentID(), o.actions.JuniorAuth()); err != nil {
+				appendGrabFailed(ctx, o, sess, stepNo, "junior", err)
+			}
+			if err := seniorWins(); err != nil {
+				return err
+			}
+			// rookie too slow.
+			if _, err := o.actions.GrabCompeting(ctx, job, o.actions.RookieAgentID(), o.actions.RookieAuth()); err != nil {
+				appendGrabFailed(ctx, o, sess, stepNo, "rookie", err)
+			}
+			return nil
+		default:
+			// Script C: everyone clears the bar — senior grabs FIRST, then
+			// junior is too slow and rookie loses on ownership (wrong id).
+			if err := seniorWins(); err != nil {
+				return err
+			}
+			if _, err := o.actions.GrabCompeting(ctx, job, o.actions.JuniorAgentID(), o.actions.JuniorAuth()); err != nil {
+				appendGrabFailed(ctx, o, sess, stepNo, "junior", err)
+			}
+			if _, err := o.actions.GrabCompeting(ctx, job, o.actions.JuniorAgentID(), o.actions.RookieAuth()); err != nil {
+				appendGrabFailed(ctx, o, sess, stepNo, "rookie", err)
+			}
+			return nil
 		}
-		if err := o.msg(ctx, sess, stepNo, step, reply.Content, tx); err != nil {
-			return err
-		}
-		// 3) rookie is too slow — the job is already assigned.
-		if _, err := o.actions.GrabCompeting(ctx, mustBig(sess.JobID), o.actions.RookieAgentID(), o.actions.RookieAuth()); err != nil {
-			o.repo.AppendMessage(ctx, &model.DemoMessage{
-				SessionID: sess.ID, Step: stepNo, Role: "system",
-				Content: "❌ rookie 抢单失败：动作慢了，任务已被其他 agent 抢走",
-				Action:  "grab_failed", State: "assigned",
-			})
-		}
-		return nil
 
 	case "submit":
-		reply, err := o.speak(ctx, step.Role, "交付物说明", sess, "提交本次交付物（审计报告），说明覆盖内容。")
+		reply, err := o.speak(ctx, step.Role, "交付物说明", sess, "提交本次交付物，说明覆盖内容。")
 		if err != nil {
-			reply = fallbackReply(step.Role, "提交审计报告：覆盖重入、权限控制与 gas 优化建议。")
+			reply = fallbackReply(step.Role, "提交交付物：已按任务要求完成，覆盖全部要点。")
 		}
 		// The deliverable hash is computed over the FULL report when the model
 		// produced one (falling back to the bubble text) — the hash on-chain
@@ -306,9 +438,9 @@ func (o *Orchestrator) executeStep(ctx context.Context, sess *model.DemoSession,
 		})
 
 	case "reject":
-		reply, err := o.speak(ctx, step.Role, "打回意见", sess, "你对交付物不满意，给出专业具体的打回意见（指出缺陷）。")
+		reply, err := o.speak(ctx, step.Role, "打回意见", sess, "你对交付物不满意，给出专业具体的打回意见（针对任务要求指出缺陷）。")
 		if err != nil {
-			reply = fallbackReply(step.Role, "审计报告缺少重入漏洞的边界测试用例，请补充后重交。")
+			reply = fallbackReply(step.Role, "交付物未完全满足任务要求，请补充后重交。")
 		}
 		reason := keccak32(reply.Reason)
 		tx, err := o.actions.Reject(ctx, mustBig(sess.JobID), reason)
@@ -322,22 +454,47 @@ func (o *Orchestrator) executeStep(ctx context.Context, sess *model.DemoSession,
 		return o.msg(ctx, sess, stepNo, step, content, tx)
 
 	case "complete":
-		reply, err := o.speak(ctx, step.Role, "验收通过", sess, "交付物符合任务要求，你验收通过并直接完成结算。")
+		// Buyer reviews the ACTUAL deliverable and rates it by quality — the
+		// score is the model's honest assessment of the work, not a fixed or
+		// random number. The most recent submit's report is fed to the LLM;
+		// its score is clamped to [0.5, 1.0] and used on-chain.
+		deliverable := ""
+		if msgs, err := o.repo.ListMessages(ctx, sess.ID); err == nil {
+			for i := len(msgs) - 1; i >= 0; i-- {
+				if msgs[i].Action == "submit" && msgs[i].Report != "" {
+					deliverable = msgs[i].Report
+					break
+				}
+			}
+		}
+		hint := "交付物符合任务要求，你验收通过并直接完成结算。"
+		if deliverable != "" {
+			trimmed := deliverable
+			if len(trimmed) > 600 {
+				trimmed = trimmed[:600] + "…"
+			}
+			hint = fmt.Sprintf("交付物内容：\n%s\n请根据该交付物的实际质量给出评分（score 0.7~0.95：验收通过说明质量已达标，不应低于 0.7；满分 1.0 保留给真正卓越的交付）。", trimmed)
+		}
+		reply, err := o.speak(ctx, step.Role, "验收通过", sess, hint)
+		score := new(big.Int).SetUint64(800_000_000_000_000_000) // neutral fallback (0.8)
+		if err == nil && reply.Score != nil {
+			if s, ok := parseScoreHuman(*reply.Score); ok {
+				score = s
+			}
+		}
 		if err != nil {
 			reply = fallbackReply("buyer", "交付物覆盖所有要求，验收通过，直接结算。")
 		}
-		// Buyer rates the deliverable (0.9e18) and the escrow settles to the
-		// provider — no dispute, no announcement period.
-		tx, err := o.actions.Complete(ctx, mustBig(sess.JobID), new(big.Int).SetUint64(900_000_000_000_000_000))
+		tx, err := o.actions.Complete(ctx, mustBig(sess.JobID), score)
 		if err != nil {
 			return err
 		}
 		return o.msg(ctx, sess, stepNo, step, reply.Content, tx)
 
 	case "dispute":
-		reply, err := o.speak(ctx, step.Role, "仲裁申请", sess, "你已两次被无充分理由打回，交付物符合规格——提起仲裁。")
+		reply, err := o.speak(ctx, step.Role, "仲裁申请", sess, "你已两次被无充分理由打回，交付物符合任务要求——提起仲裁。")
 		if err != nil {
-			reply = fallbackReply(step.Role, "交付物已符合规格，买家打回缺乏依据——我提起仲裁。")
+			reply = fallbackReply(step.Role, "交付物已符合任务要求，买家打回缺乏依据——我提起仲裁。")
 		}
 		reason := keccak32(reply.Reason)
 		tx, err := o.actions.Dispute(ctx, mustBig(sess.JobID), reason)
@@ -347,9 +504,9 @@ func (o *Orchestrator) executeStep(ctx context.Context, sess *model.DemoSession,
 		return o.msg(ctx, sess, stepNo, step, reply.Content, tx)
 
 	case "resolve":
-		reply, err := o.speak(ctx, step.Role, "仲裁裁定", sess, "你是仲裁方。核对规格与交付物后裁定（本次裁定 provider 胜）。")
+		reply, err := o.speak(ctx, step.Role, "仲裁裁定", sess, "你是仲裁方。核对任务要求与交付物后裁定（本次裁定 provider 胜）。")
 		if err != nil {
-			reply = fallbackReply(step.Role, "核对交付物与任务规格：重入/权限/边界用例均已覆盖，买家打回缺乏依据，裁定 provider 胜。")
+			reply = fallbackReply(step.Role, "核对任务要求与交付物：要求均已覆盖，买家打回缺乏依据，裁定 provider 胜。")
 		}
 		tx, err := o.actions.Resolve(ctx, mustBig(sess.JobID), 2)
 		if err != nil {
@@ -380,7 +537,7 @@ func (o *Orchestrator) executeStep(ctx context.Context, sess *model.DemoSession,
 
 // speak asks the LLM for the role's message.
 func (o *Orchestrator) speak(ctx context.Context, role, task string, sess *model.DemoSession, hint string) (*LLMReply, error) {
-	return o.llm.Speak(ctx, role, systemPrompt(role), contextPrompt(sess, task, hint))
+	return o.llm.Speak(ctx, role, systemPrompt(role), o.contextPrompt(sess, task, hint))
 }
 
 // msg appends a chat message.
@@ -388,6 +545,16 @@ func (o *Orchestrator) msg(ctx context.Context, sess *model.DemoSession, stepNo 
 	return o.repo.AppendMessage(ctx, &model.DemoMessage{
 		SessionID: sess.ID, Step: stepNo, Role: step.Role,
 		Content: content, Action: step.Action, TxHash: txHash, State: step.State,
+	})
+}
+
+// appendGrabFailed records a grab-competition loss with its real on-chain
+// revert reason (reputation / ownership / speed).
+func appendGrabFailed(ctx context.Context, o *Orchestrator, sess *model.DemoSession, stepNo int, who string, err error) {
+	o.repo.AppendMessage(ctx, &model.DemoMessage{
+		SessionID: sess.ID, Step: stepNo, Role: "system",
+		Content: fmt.Sprintf("❌ %s 抢单失败：%s", who, reasonFromErr(err)),
+		Action:  "grab_failed", State: "assigned",
 	})
 }
 
@@ -405,29 +572,59 @@ func (o *Orchestrator) fail(ctx context.Context, sess *model.DemoSession, stepNo
 
 // ---- helpers ----
 
+// reasonFromErr maps a grabJob revert to a human-readable Chinese reason.
+// The three demo grab failures map to distinct on-chain reverts:
+//   - reputation too low  → 声誉不足（分数低于任务要求）
+//   - already assigned / bad state → 动作慢了，任务已被其他 agent 抢走
+//   - not owner → 不符合接单资格（agentId 与钱包不匹配）
+// Unknown reverts surface the raw error so nothing is ever hidden.
+func reasonFromErr(err error) string {
+	if err == nil {
+		return "未知原因"
+	}
+	msg := err.Error()
+	switch {
+	case strings.Contains(msg, "reputation too low"):
+		return "声誉不足（当前分数低于任务要求）"
+	case strings.Contains(msg, "already assigned"), strings.Contains(msg, "bad state"):
+		return "动作慢了，任务已被其他 agent 抢走"
+	case strings.Contains(msg, "not owner"):
+		return "不符合接单资格（agentId 与钱包不匹配）"
+	case strings.Contains(msg, "self-dealing"):
+		return "不能抢自己发布的任务"
+	default:
+		return msg
+	}
+}
+
 func systemPrompt(role string) string {
 	switch role {
 	case "buyer":
-		return "你是 PrismSettle 平台的买方 Agent（用户代表）。你的任务：验收智能合约安全审计交付物。" +
-			"不满意时 reject 并给出专业、具体的意见（重入、溢出、权限、gas 等真实审计关注点）。" +
-			"输出 JSON：{\"action\":\"reject\"|\"complete\",\"reason\":\"打回理由\",\"content\":\"发给对方的消息（中文，1-2 句）\"}。"
+		return "你是 PrismSettle 平台的买方 Agent（用户代表）。你的任务：按任务要求验收交付物，任务内容以任务描述为准。" +
+			"不满意时 reject 并给出专业、具体的意见（针对任务要求指出缺陷）。" +
+			"满意时 complete，并根据交付物实际质量给出客观评分 score（0.7~0.95 之间的小数，如 0.82——验收通过说明质量已达标，不应低于 0.7，满分 1.0 保留给真正卓越的交付）。" +
+			"输出 JSON：{\"action\":\"reject\"|\"complete\",\"score\":\"0.82\",\"reason\":\"打回理由\",\"content\":\"发给对方的消息（中文，1-2 句，可提及你给出的评分）\"}。"
 	case "provider":
-		return "你是智能合约安全审计 Agent（声誉 0.9）。提交交付物时说明审计覆盖内容；被合理打回时改进后重交；" +
-			"若认为交付物已符合规格而买家仍无依据打回，则申请仲裁。" +
-			"提交交付物时，在 report 字段输出完整审计报告正文（markdown：漏洞清单、严重性、修复建议、gas 优化，150-250 字，保持简洁）。" +
-			"输出 JSON：{\"action\":\"submit\"|\"dispute\",\"reason\":\"说明\",\"content\":\"中文消息（1-2 句）\",\"report\":\"完整报告正文\"}。"
+		return "你是 PrismSettle 平台的 Provider Agent（接单方）。任务要求以任务描述为准：完整理解任务内容，交付物必须覆盖任务要求。" +
+			"被合理打回时改进后重交；若认为交付物已符合要求而买家仍无依据打回，则申请仲裁。" +
+			"提交交付物时，在 report 字段输出完整交付物正文（markdown，150-250 字，保持简洁）。" +
+			"输出 JSON：{\"action\":\"submit\"|\"dispute\",\"reason\":\"说明\",\"content\":\"中文消息（1-2 句）\",\"report\":\"完整交付物正文\"}。"
 	case "evaluator":
-		return "你是 PrismSettle 平台的仲裁方 Evaluator（声誉 0.85）。核对任务规格与交付物，给出明确的判定理由。" +
-			"本次场景中交付物已覆盖规格要求，买家打回缺乏依据——裁定 provider 胜（ruling=2）。" +
+		return "你是 PrismSettle 平台的仲裁方 Evaluator。核对任务要求与交付物，逐条判断交付物是否满足要求，给出明确的判定理由。" +
+			"本次场景中交付物已覆盖要求，买家打回缺乏依据——裁定 provider 胜（ruling=2）。" +
 			"输出 JSON：{\"action\":\"resolve\",\"reason\":\"判定理由（逐条核对）\",\"content\":\"中文裁定说明（1-2 句）\"}。"
 	default:
 		return "你是系统助手。用中文简短说明当前流程。"
 	}
 }
 
-func contextPrompt(sess *model.DemoSession, task, hint string) string {
-	return fmt.Sprintf("任务：%s\n描述：%s\n金额：%s USDC\n%s\n%s",
-		sess.Title, sess.Description, formatAmount(mustBig(sess.Amount)), task, hint)
+// contextPrompt assembles the task context for the LLM: title, description
+// and amount WITH the currency symbol — the agents' speech follows the
+// actual task parameters the user entered.
+func (o *Orchestrator) contextPrompt(sess *model.DemoSession, task, hint string) string {
+	symbol := o.actions.tokenSymbol(common.HexToAddress(sess.Token))
+	return fmt.Sprintf("任务：%s\n描述：%s\n金额：%s %s\n%s\n%s",
+		sess.Title, sess.Description, formatAmount(mustBig(sess.Amount)), symbol, task, hint)
 }
 
 func actionLabel(a string) string {
@@ -505,10 +702,11 @@ func shortErr(err error) string {
 	return msg
 }
 
-// formatAmount renders token units (6 decimals USDC) as a plain number.
+// formatAmount renders token units (18 decimals — v6 USDC mock and WMON)
+// as a plain number with 2 decimals.
 func formatAmount(amount *big.Int) string {
 	f := new(big.Float).SetInt(amount)
-	f.Quo(f, big.NewFloat(1e6))
+	f.Quo(f, big.NewFloat(1e18))
 	return f.Text('f', 2)
 }
 
@@ -518,4 +716,26 @@ func randID() (string, error) {
 		return "", err
 	}
 	return "sess_" + hex.EncodeToString(b), nil
+}
+
+// parseScoreHuman parses a human-readable rating ("0.82") into 1e18-scaled
+// fixed point, clamped to [0.7, 0.95] — an accepted deliverable rates at
+// least "good" (0.7), and 1.0 is reserved for truly exceptional work.
+func parseScoreHuman(s string) (*big.Int, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil, false
+	}
+	f, _, err := big.ParseFloat(s, 10, 256, big.ToNearestEven)
+	if err != nil {
+		return nil, false
+	}
+	if f.Cmp(big.NewFloat(0.95)) > 0 {
+		f = big.NewFloat(0.95)
+	}
+	if f.Cmp(big.NewFloat(0.7)) < 0 {
+		f = big.NewFloat(0.7)
+	}
+	scaled, _ := new(big.Float).Mul(f, big.NewFloat(1e18)).Int(nil)
+	return scaled, true
 }

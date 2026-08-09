@@ -9,6 +9,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 
@@ -37,7 +38,22 @@ const demoJobABI = `[
    "outputs":[]},
   {"name":"executeArbitrationResult","type":"function","stateMutability":"nonpayable",
    "inputs":[{"name":"jobId","type":"uint256"}],
-   "outputs":[]}
+   "outputs":[]},
+  {"name":"getJobState","type":"function","stateMutability":"view",
+   "inputs":[{"name":"jobId","type":"uint256"}],
+   "outputs":[
+     {"name":"state","type":"uint8"},{"name":"buyer","type":"address"},
+     {"name":"provider","type":"address"},{"name":"amount","type":"uint256"},
+     {"name":"deliverableHash","type":"bytes32"},{"name":"proofHash","type":"bytes32"},
+     {"name":"deadline","type":"uint64"},{"name":"hook","type":"address"},
+     {"name":"minProviderReputation","type":"uint96"},
+     {"name":"disputeResolvedAt","type":"uint256"}]},
+  {"name":"getJobAmount","type":"function","stateMutability":"view",
+   "inputs":[{"name":"jobId","type":"uint256"}],
+   "outputs":[{"name":"","type":"uint256"}]},
+  {"name":"getJobPaymentToken","type":"function","stateMutability":"view",
+   "inputs":[{"name":"jobId","type":"uint256"}],
+   "outputs":[{"name":"","type":"address"}]}
 ]`
 
 // demoHookABI: ArbitrationHook functions.
@@ -50,7 +66,8 @@ const demoHookABI = `[
    "outputs":[]}
 ]`
 
-// demoTokenABI: ERC-20 approve + mint (mock token, deployer can mint).
+// demoTokenABI: ERC-20 approve + mint (mock token, deployer can mint) plus
+// WETH9-style deposit/transfer for WMON (no mint — wrapping native MON).
 const demoTokenABI = `[
   {"name":"approve","type":"function","stateMutability":"nonpayable",
    "inputs":[{"name":"spender","type":"address"},{"name":"amount","type":"uint256"}],
@@ -60,7 +77,12 @@ const demoTokenABI = `[
    "outputs":[]},
   {"name":"balanceOf","type":"function","stateMutability":"view",
    "inputs":[{"name":"owner","type":"address"}],
-   "outputs":[{"name":"","type":"uint256"}]}
+   "outputs":[{"name":"","type":"uint256"}]},
+  {"name":"deposit","type":"function","stateMutability":"payable",
+   "inputs":[],"outputs":[]},
+  {"name":"transfer","type":"function","stateMutability":"nonpayable",
+   "inputs":[{"name":"to","type":"address"},{"name":"amount","type":"uint256"}],
+   "outputs":[{"name":"","type":"bool"}]}
 ]`
 
 // jobCreatedTopic = keccak("JobCreated(uint256,uint256,address,uint64,address,uint96,address)")
@@ -74,7 +96,8 @@ type Actions struct {
 	chainID       *big.Int
 	JobAddr       common.Address
 	HookAddr      common.Address
-	TokenAddr     common.Address
+	TokenAddr     common.Address // default payment token (USDC mock)
+	WmonAddr      common.Address // optional Wrapped MON; zero when unset
 	buyerAuth     *bind.TransactOpts
 	providerAuth  *bind.TransactOpts
 	juniorAuth    *bind.TransactOpts
@@ -84,7 +107,8 @@ type Actions struct {
 
 	jobContract   *chainbinding.BoundContract
 	hookContract  *chainbinding.BoundContract
-	tokenContract *chainbinding.BoundContract
+	tokenContract *chainbinding.BoundContract // default token (USDC mock, mintable)
+	wmonContract  *chainbinding.BoundContract // WMON (deposit/transfer); nil when unset
 }
 
 // ActionsConfig carries contract addresses and signing keys (hex, 0x optional).
@@ -94,6 +118,9 @@ type ActionsConfig struct {
 	JobAddr      string
 	HookAddr     string
 	TokenAddr    string
+	// WmonAddr is the Wrapped MON contract (optional). When set, the demo
+	// accepts WMON as an alternative per-job token.
+	WmonAddr string
 	BuyerKey     string // BUYER_KEY
 	ProviderKey  string // AUDITOR_SENIOR_KEY (wins the grab in the demo)
 	JuniorKey    string // AUDITOR_JUNIOR_KEY (loses the grab: ownership mismatch)
@@ -150,12 +177,20 @@ func NewActions(cfg ActionsConfig) (*Actions, error) {
 	if err != nil {
 		return nil, fmt.Errorf("demo token binding: %w", err)
 	}
+	var wmonContract *chainbinding.BoundContract
+	if cfg.WmonAddr != "" {
+		wmonContract, err = chainbinding.NewBoundContract(common.HexToAddress(cfg.WmonAddr), demoTokenABI, client)
+		if err != nil {
+			return nil, fmt.Errorf("demo wmon binding: %w", err)
+		}
+	}
 	return &Actions{
 		client:        client,
 		chainID:       chainID,
 		JobAddr:       common.HexToAddress(cfg.JobAddr),
 		HookAddr:      common.HexToAddress(cfg.HookAddr),
 		TokenAddr:     common.HexToAddress(cfg.TokenAddr),
+		WmonAddr:      common.HexToAddress(cfg.WmonAddr),
 		buyerAuth:     buyerAuth,
 		providerAuth:  providerAuth,
 		juniorAuth:    juniorAuth,
@@ -165,6 +200,7 @@ func NewActions(cfg ActionsConfig) (*Actions, error) {
 		jobContract:   jobContract,
 		hookContract:  hookContract,
 		tokenContract: tokenContract,
+		wmonContract:  wmonContract,
 	}, nil
 }
 
@@ -188,7 +224,9 @@ func newAuth(keyHex string, chainID *big.Int) (*bind.TransactOpts, error) {
 
 // applyGasDefaults sets EIP-1559 fee fields from chain suggestions (Monad
 // testnet base fee fluctuates; a fixed cap causes "max fee per gas less
-// than block base fee" reverts).
+// than block base fee" reverts). Values are sanity-clamped: a misbehaving
+// RPC node can return an absurd gas price, which would make the tx cost
+// exceed the wallet balance ("Signer had insufficient balance").
 func applyGasDefaults(ctx context.Context, client *ethclient.Client, auth *bind.TransactOpts) error {
 	tip, err := client.SuggestGasTipCap(ctx)
 	if err != nil {
@@ -198,11 +236,28 @@ func applyGasDefaults(ctx context.Context, client *ethclient.Client, auth *bind.
 	if err != nil {
 		feeCap = big.NewInt(100_000_000_000)
 	}
+	// Clamp: Monad testnet base fee is ~100 gwei. Anything above 1,000 gwei
+	// is a broken node answer, not a real fee.
+	const maxFeeCap = uint64(1_000_000_000_000) // 1,000 gwei
+	const maxTip = uint64(100_000_000_000)      // 100 gwei
+	if feeCap.Cmp(new(big.Int).SetUint64(maxFeeCap)) > 0 {
+		feeCap = new(big.Int).SetUint64(maxFeeCap)
+	}
+	if tip.Cmp(new(big.Int).SetUint64(maxTip)) > 0 {
+		tip = new(big.Int).SetUint64(maxTip)
+	}
 	// fee cap must be >= base fee + tip; suggestGasPrice already includes a
 	// buffer, add tip on top to be safe.
 	feeCap = new(big.Int).Add(feeCap, tip)
 	auth.GasTipCap = tip
 	auth.GasFeeCap = feeCap
+	// Fixed gasLimit instead of eth_estimateGas: some Monad RPC nodes return
+	// gas=0 (or error) for transactions that are EXPECTED to revert (the grab
+	// competition's losing grabs), which makes the tx fail to send with
+	// "intrinsic gas greater than limit". 1M covers every demo write tx —
+	// complete() alone needs ~392k — and EIP-1559 only charges the gas
+	// actually used, so the headroom costs nothing extra.
+	auth.GasLimit = 1_000_000
 	return nil
 }
 
@@ -213,6 +268,10 @@ func (a *Actions) ProviderAgentID() *big.Int  { return new(big.Int).SetBytes(a.p
 func (a *Actions) JuniorAgentID() *big.Int    { return new(big.Int).SetBytes(a.juniorAuth.From.Bytes()) }
 func (a *Actions) RookieAgentID() *big.Int    { return new(big.Int).SetBytes(a.rookieAuth.From.Bytes()) }
 func (a *Actions) EvaluatorAgentID() *big.Int { return new(big.Int).SetBytes(a.evaluatorAuth.From.Bytes()) }
+
+// BuyerAddress returns the demo buyer wallet (BUYER_KEY) — used to verify
+// that an existing job was created by the demo wallet before resuming it.
+func (a *Actions) BuyerAddress() common.Address { return a.buyerAuth.From }
 
 // JuniorAuth / RookieAuth expose the competitor signers for the grab race.
 func (a *Actions) JuniorAuth() *bind.TransactOpts { return a.juniorAuth }
@@ -228,8 +287,96 @@ func (a *Actions) GrabCompeting(ctx context.Context, jobID, wrongAgentID *big.In
 
 // transact sends a write tx and waits for the receipt; returns tx hash.
 func (a *Actions) transact(ctx context.Context, contract *chainbinding.BoundContract, auth *bind.TransactOpts, method string, args ...interface{}) (string, error) {
+	// Refresh EIP-1559 fee fields before EVERY send: Monad's base fee moves
+	// and the multi-node RPC pool can answer differently per call. Stale
+	// values either underpay ("max fee per gas less than block base fee") or,
+	// if a broken node answered at startup, overprice the tx so hard the
+	// wallet looks broke.
+	if err := applyGasDefaults(ctx, a.client, auth); err != nil {
+		return "", fmt.Errorf("gas defaults: %w", err)
+	}
 	bc := contract.Raw()
 	tx, err := bc.Transact(auth, method, args...)
+	if err != nil {
+		return "", err
+	}
+	receipt, err := bind.WaitMined(ctx, a.client, tx)
+	if err != nil {
+		return "", err
+	}
+	if receipt.Status != 1 {
+		// Replay with eth_call to surface the real revert reason (receipts
+		// carry no revert data). Without this, every failed tx shows as a
+		// bare "tx reverted: <hash>" and demo feedback loses its meaning.
+		if reason := a.revertReasonFor(ctx, contract, auth, method, args...); reason != "" {
+			return tx.Hash().Hex(), fmt.Errorf("tx reverted: %s", reason)
+		}
+		return tx.Hash().Hex(), fmt.Errorf("tx reverted: %s", tx.Hash().Hex())
+	}
+	return tx.Hash().Hex(), nil
+}
+
+// revertReasonFor replays a call with eth_call to extract the revert reason
+// from a failed transaction. Empty string when the call unexpectedly succeeds
+// or the node returns nothing parseable.
+func (a *Actions) revertReasonFor(ctx context.Context, contract *chainbinding.BoundContract, auth *bind.TransactOpts, method string, args ...interface{}) string {
+	var out []interface{}
+	err := contract.Raw().Call(&bind.CallOpts{
+		Context: ctx, From: auth.From,
+	}, &out, method, args...)
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	if idx := strings.Index(msg, "reverted: "); idx >= 0 {
+		return strings.TrimSpace(msg[idx+len("reverted: "):])
+	}
+	return msg
+}
+
+// Token helpers — resolve the contract + symbol for a per-job token.
+func (a *Actions) isWmon(addr common.Address) bool {
+	return a.WmonAddr != (common.Address{}) && addr == a.WmonAddr
+}
+
+// tokenSymbol maps a per-job token address to a display symbol.
+func (a *Actions) tokenSymbol(addr common.Address) string {
+	if a.isWmon(addr) {
+		return "WMON"
+	}
+	return "USDC"
+}
+
+// ValidateToken returns an error when the address is not a supported
+// per-job token (default USDC mock or WMON).
+func (a *Actions) ValidateToken(addr common.Address) error {
+	_, err := a.tokenBinding(addr)
+	return err
+}
+
+// tokenBinding returns the bound contract for a per-job token address.
+// Only the default token (USDC mock) and WMON (when configured) are allowed.
+func (a *Actions) tokenBinding(addr common.Address) (*chainbinding.BoundContract, error) {
+	if a.isWmon(addr) {
+		if a.wmonContract == nil {
+			return nil, fmt.Errorf("wmon not configured")
+		}
+		return a.wmonContract, nil
+	}
+	if addr == a.TokenAddr {
+		return a.tokenContract, nil
+	}
+	return nil, fmt.Errorf("unsupported token %s", addr.Hex())
+}
+
+// transactWithValue sends a write tx with msg.value (payable calls such as
+// WMON.deposit) and waits for the receipt. The caller's auth is cloned so
+// its Value field is never mutated (auths are reused across steps).
+func (a *Actions) transactWithValue(ctx context.Context, contract *chainbinding.BoundContract, auth *bind.TransactOpts, value *big.Int, method string, args ...interface{}) (string, error) {
+	bc := contract.Raw()
+	clone := *auth
+	clone.Value = value
+	tx, err := bc.Transact(&clone, method, args...)
 	if err != nil {
 		return "", err
 	}
@@ -243,11 +390,75 @@ func (a *Actions) transact(ctx context.Context, contract *chainbinding.BoundCont
 	return tx.Hash().Hex(), nil
 }
 
+// EnsureNativeGas tops up native MON (gas) for every demo role wallet when
+// its balance drops below the threshold. Demo roles burn gas on every script
+// step; after many runs their MON runs out and any write tx fails with
+// "insufficient balance" (signer-level rejection, before the contract even
+// sees it). The deployer funds them — it holds plenty from deployment.
+func (a *Actions) EnsureNativeGas(ctx context.Context) error {
+	const minGas = uint64(500_000_000_000_000_000) // 0.5 MON
+	const topUp = uint64(1_000_000_000_000_000_000) // 1 MON
+	for _, addr := range []common.Address{
+		a.buyerAuth.From, a.providerAuth.From, a.juniorAuth.From,
+		a.rookieAuth.From, a.evaluatorAuth.From,
+	} {
+		bal, err := a.client.BalanceAt(ctx, addr, nil)
+		if err != nil {
+			return fmt.Errorf("native balance check %s: %w", addr.Hex(), err)
+		}
+		if bal.Cmp(new(big.Int).SetUint64(minGas)) >= 0 {
+			continue
+		}
+		if _, err := a.sendNative(ctx, addr, new(big.Int).SetUint64(topUp)); err != nil {
+			return fmt.Errorf("native top-up %s: %w", addr.Hex(), err)
+		}
+	}
+	return nil
+}
+
+// sendNative transfers native MON from the deployer wallet (plain 21000-gas
+// value transfer, signed via the deployer's TransactOpts signer).
+func (a *Actions) sendNative(ctx context.Context, to common.Address, amount *big.Int) (string, error) {
+	nonce, err := a.client.PendingNonceAt(ctx, a.deployerAuth.From)
+	if err != nil {
+		return "", err
+	}
+	if a.deployerAuth.GasFeeCap == nil || a.deployerAuth.GasTipCap == nil {
+		if err := applyGasDefaults(ctx, a.client, a.deployerAuth); err != nil {
+			return "", err
+		}
+	}
+	tx := types.NewTx(&types.DynamicFeeTx{
+		ChainID:   a.chainID,
+		Nonce:     nonce,
+		To:        &to,
+		Value:     amount,
+		Gas:       21000,
+		GasFeeCap: a.deployerAuth.GasFeeCap,
+		GasTipCap: a.deployerAuth.GasTipCap,
+	})
+	signed, err := a.deployerAuth.Signer(a.deployerAuth.From, tx)
+	if err != nil {
+		return "", err
+	}
+	if err := a.client.SendTransaction(ctx, signed); err != nil {
+		return "", err
+	}
+	receipt, err := bind.WaitMined(ctx, a.client, signed)
+	if err != nil {
+		return "", err
+	}
+	if receipt.Status != 1 {
+		return signed.Hash().Hex(), fmt.Errorf("native transfer reverted")
+	}
+	return signed.Hash().Hex(), nil
+}
+
 // EnsureFunds tops up the buyer (escrow + reject deposit + dispute deposit)
-// and the provider (dispute deposit) with mock tokens via the deployer.
-// Safe on testnet where the token is a deployer-mintable mock; balances are
-// checked first.
-func (a *Actions) EnsureFunds(ctx context.Context, amount *big.Int) error {
+// and the provider (dispute deposit) in the given per-job token. USDC is
+// minted by the deployer; WMON is wrapped from native MON and transferred.
+// Balances are checked first (safe to re-run across sessions).
+func (a *Actions) EnsureFunds(ctx context.Context, amount *big.Int, token common.Address) error {
 	deposit := new(big.Int).Div(new(big.Int).Mul(amount, big.NewInt(500)), big.NewInt(10000))
 	// Buyer spends: escrow + first-reject deposit + dispute deposit.
 	buyerNeed := new(big.Int).Add(amount, new(big.Int).Mul(deposit, big.NewInt(2)))
@@ -259,7 +470,7 @@ func (a *Actions) EnsureFunds(ctx context.Context, amount *big.Int) error {
 		{a.providerAuth.From, deposit},
 		{a.evaluatorAuth.From, deposit},
 	} {
-		bal, err := a.tokenBalance(ctx, rec.addr)
+		bal, err := a.tokenBalance(ctx, token, rec.addr)
 		if err != nil {
 			return fmt.Errorf("balance check: %w", err)
 		}
@@ -267,15 +478,37 @@ func (a *Actions) EnsureFunds(ctx context.Context, amount *big.Int) error {
 			continue
 		}
 		topUp := new(big.Int).Sub(rec.amount, bal)
-		if _, err := a.transact(ctx, a.tokenContract, a.deployerAuth, "mint", rec.addr, topUp); err != nil {
-			return fmt.Errorf("mint %s: %w", rec.addr.Hex(), err)
+		if err := a.topUp(ctx, token, rec.addr, topUp); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-func (a *Actions) tokenBalance(ctx context.Context, addr common.Address) (*big.Int, error) {
-	bc := a.tokenContract.Raw()
+// topUp funds a wallet in the given token: mint for the USDC mock, wrap
+// native MON + transfer for WMON (WMON has no mint; deposit is payable).
+func (a *Actions) topUp(ctx context.Context, token common.Address, to common.Address, amount *big.Int) error {
+	if a.isWmon(token) {
+		if _, err := a.transactWithValue(ctx, a.wmonContract, a.deployerAuth, amount, "deposit"); err != nil {
+			return fmt.Errorf("wmon wrap: %w", err)
+		}
+		if _, err := a.transact(ctx, a.wmonContract, a.deployerAuth, "transfer", to, amount); err != nil {
+			return fmt.Errorf("wmon transfer: %w", err)
+		}
+		return nil
+	}
+	if _, err := a.transact(ctx, a.tokenContract, a.deployerAuth, "mint", to, amount); err != nil {
+		return fmt.Errorf("mint %s: %w", to.Hex(), err)
+	}
+	return nil
+}
+
+func (a *Actions) tokenBalance(ctx context.Context, token, addr common.Address) (*big.Int, error) {
+	bound, err := a.tokenBinding(token)
+	if err != nil {
+		return nil, err
+	}
+	bc := bound.Raw()
 	var outs []interface{}
 	if err := bc.Call(&bind.CallOpts{Context: ctx}, &outs, "balanceOf", addr); err != nil {
 		return nil, err
@@ -291,6 +524,8 @@ func (a *Actions) tokenBalance(ctx context.Context, addr common.Address) (*big.I
 }
 
 // CreateAndFund runs createJob + approve + fundViaToken as the buyer.
+// token selects the per-job payment currency: the default token (USDC mock,
+// createJob passes 0x0 = contract default) or WMON (passed explicitly).
 // Returns the jobId (from the JobCreated log) and the tx hashes.
 func (a *Actions) CreateAndFund(
 	ctx context.Context,
@@ -298,9 +533,18 @@ func (a *Actions) CreateAndFund(
 	deadline uint64,
 	minRep *big.Int,
 	amount *big.Int,
+	token common.Address,
 ) (jobID *big.Int, txHashes []string, err error) {
+	tok, err := a.tokenBinding(token)
+	if err != nil {
+		return nil, nil, err
+	}
+	paymentToken := common.Address{}
+	if a.isWmon(token) {
+		paymentToken = a.WmonAddr
+	}
 	bc := a.jobContract.Raw()
-	tx, err := bc.Transact(a.buyerAuth, "createJob", agentID, big.NewInt(0), deadline, a.HookAddr, minRep, a.TokenAddr)
+	tx, err := bc.Transact(a.buyerAuth, "createJob", agentID, big.NewInt(0), deadline, a.HookAddr, minRep, paymentToken)
 	if err != nil {
 		return nil, nil, fmt.Errorf("createJob: %w", err)
 	}
@@ -324,7 +568,7 @@ func (a *Actions) CreateAndFund(
 	}
 
 	// approve token to the job contract, then fund.
-	if _, err := a.transact(ctx, a.tokenContract, a.buyerAuth, "approve", a.JobAddr, amount); err != nil {
+	if _, err := a.transact(ctx, tok, a.buyerAuth, "approve", a.JobAddr, amount); err != nil {
 		return nil, nil, fmt.Errorf("approve: %w", err)
 	}
 	txHashes = append(txHashes, "")
@@ -339,7 +583,7 @@ func (a *Actions) CreateAndFund(
 	// need allowance for dispute deposits. Max is fine for the mock token.
 	maxApproval := new(big.Int).Sub(new(big.Int).Lsh(big.NewInt(1), 256), big.NewInt(1))
 	for _, auth := range []*bind.TransactOpts{a.buyerAuth, a.providerAuth, a.evaluatorAuth} {
-		if _, err := a.transact(ctx, a.tokenContract, auth, "approve", a.HookAddr, maxApproval); err != nil {
+		if _, err := a.transact(ctx, tok, auth, "approve", a.HookAddr, maxApproval); err != nil {
 			return nil, nil, fmt.Errorf("approve hook deposit: %w", err)
 		}
 	}
@@ -349,6 +593,90 @@ func (a *Actions) CreateAndFund(
 // Grab claims the job as the provider agent (owner check enforced on-chain).
 func (a *Actions) Grab(ctx context.Context, jobID, providerAgentID *big.Int) (string, error) {
 	return a.transact(ctx, a.jobContract, a.providerAuth, "grabJob", jobID, providerAgentID)
+}
+
+// JobState mirrors the on-chain JobState enum (0=Created … 6=Refunded) plus
+// the fields the demo needs to resume an existing job.
+type JobState struct {
+	State         uint8
+	Buyer         common.Address
+	Provider      common.Address
+	Amount        *big.Int
+	MinProviderRep *big.Int // uint96, 1e18-scaled
+}
+
+// ReadJobState fetches the full job state via getJobState (eth_call).
+func (a *Actions) ReadJobState(ctx context.Context, jobID *big.Int) (*JobState, error) {
+	bc := a.jobContract.Raw()
+	var outs []interface{}
+	if err := bc.Call(&bind.CallOpts{Context: ctx}, &outs, "getJobState", jobID); err != nil {
+		return nil, err
+	}
+	if len(outs) < 10 {
+		return nil, fmt.Errorf("getJobState: bad output length %d", len(outs))
+	}
+	st := &JobState{}
+	if v, ok := outs[0].(uint8); ok {
+		st.State = v
+	}
+	if v, ok := outs[1].(common.Address); ok {
+		st.Buyer = v
+	}
+	if v, ok := outs[2].(common.Address); ok {
+		st.Provider = v
+	}
+	if v, ok := outs[3].(*big.Int); ok {
+		st.Amount = v
+	}
+	if v, ok := outs[8].(*big.Int); ok {
+		st.MinProviderRep = v
+	}
+	if st.Amount == nil {
+		st.Amount = big.NewInt(0)
+	}
+	if st.MinProviderRep == nil {
+		st.MinProviderRep = big.NewInt(0)
+	}
+	return st, nil
+}
+
+// ReadJobToken returns the job's effective payment token address.
+func (a *Actions) ReadJobToken(ctx context.Context, jobID *big.Int) (common.Address, error) {
+	bc := a.jobContract.Raw()
+	var outs []interface{}
+	if err := bc.Call(&bind.CallOpts{Context: ctx}, &outs, "getJobPaymentToken", jobID); err != nil {
+		return common.Address{}, err
+	}
+	if len(outs) == 0 {
+		return common.Address{}, fmt.Errorf("getJobPaymentToken: no output")
+	}
+	addr, ok := outs[0].(common.Address)
+	if !ok {
+		return common.Address{}, fmt.Errorf("getJobPaymentToken: bad output type")
+	}
+	return addr, nil
+}
+
+// PreflightGrab simulates grabJob from the given signer (eth_call, no gas)
+// and returns the revert reason — the orchestrator uses it to pick the grab
+// competition script based on why a competitor would lose.
+func (a *Actions) PreflightGrab(ctx context.Context, jobID, agentID *big.Int, from common.Address) error {
+	bc := a.jobContract.Raw()
+	var outs []interface{}
+	return bc.Call(&bind.CallOpts{Context: ctx, From: from}, &outs, "grabJob", jobID, agentID)
+}
+
+// FundExisting funds an already-created job (buyer signs): approve the job
+// contract for the escrow amount, then fundViaToken.
+func (a *Actions) FundExisting(ctx context.Context, jobID *big.Int, amount *big.Int, token common.Address) (string, error) {
+	tok, err := a.tokenBinding(token)
+	if err != nil {
+		return "", err
+	}
+	if _, err := a.transact(ctx, tok, a.buyerAuth, "approve", a.JobAddr, amount); err != nil {
+		return "", fmt.Errorf("approve job: %w", err)
+	}
+	return a.transact(ctx, a.jobContract, a.buyerAuth, "fundViaToken", jobID, amount, []byte{})
 }
 
 // Submit delivers work (deliverable + proof hashes).

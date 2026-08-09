@@ -70,33 +70,20 @@ func (r *AgentRegistryRepository) UpsertFromEvent(ctx context.Context, ev *model
 	return nil
 }
 
-// List returns paginated agent_registry rows for a chain.
+// List returns all agent_registry rows for a chain (unordered by page —
+// sorting + pagination happen in the service layer after score enrichment,
+// because scores are not stored in the DB).
 func (r *AgentRegistryRepository) List(
 	ctx context.Context,
 	chainName string,
-	page, size int,
-) ([]model.AgentRegistryRecord, int64, error) {
-	if page < 1 {
-		page = 1
-	}
-	if size < 1 || size > 100 {
-		size = 20
-	}
-	var (
-		list  []model.AgentRegistryRecord
-		total int64
-	)
+) ([]model.AgentRegistryRecord, error) {
+	var list []model.AgentRegistryRecord
 	q := r.db.WithContext(ctx).Model(&model.AgentRegistryRecord{}).
 		Where("chain_name = ?", chainName)
-	if err := q.Count(&total).Error; err != nil {
-		return nil, 0, errno.ErrInternal
+	if err := q.Order("registered_at ASC").Find(&list).Error; err != nil {
+		return nil, errno.ErrInternal
 	}
-	if err := q.Order("registered_at DESC").
-		Offset((page - 1) * size).Limit(size).
-		Find(&list).Error; err != nil {
-		return nil, 0, errno.ErrInternal
-	}
-	return list, total, nil
+	return list, nil
 }
 
 // Get returns a single agent by chain + agentId.

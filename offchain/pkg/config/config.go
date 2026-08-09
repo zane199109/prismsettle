@@ -51,6 +51,9 @@ type EvaluatorConfig struct {
 	JobAddr       string `mapstructure:"job_addr"`        // PrismSettleJob contract address
 	HookAddr      string `mapstructure:"hook_addr"`       // ArbitrationHook contract address
 	PaymentToken  string `mapstructure:"payment_token"`   // default payment token (USDC mock)
+	// WmonToken is the Wrapped MON address (optional). When set, the demo
+	// orchestrator accepts WMON as an alternative per-job token.
+	WmonToken string `mapstructure:"wmon_token"`
 	AnnouncementWaitSec int `mapstructure:"announcement_wait_sec"` // demo wait before executing arbitration (>= on-chain period)
 	PollInterval  int    `mapstructure:"poll_interval"`   // Evaluator poll interval (seconds), default 2
 	BatchSize     int    `mapstructure:"batch_size"`      // Evaluator batch size, default 20

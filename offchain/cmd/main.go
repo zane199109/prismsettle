@@ -374,6 +374,7 @@ func main() {
 			JobAddr:      evCfg.JobAddr,
 			HookAddr:     evCfg.HookAddr,
 			TokenAddr:    evCfg.PaymentToken,
+			WmonAddr:     evCfg.WmonToken,
 			BuyerKey:     os.Getenv("BUYER_KEY"),
 			ProviderKey:  os.Getenv("AUDITOR_SENIOR_KEY"),
 			JuniorKey:    os.Getenv("AUDITOR_JUNIOR_KEY"),

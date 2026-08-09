@@ -3,6 +3,9 @@ package demo
 import (
 	"context"
 	"errors"
+	"fmt"
+	"math/big"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -38,9 +41,21 @@ func (r *SessionRepo) GetSession(ctx context.Context, id string) (*model.DemoSes
 }
 
 // GetByJobID loads the most recent session that created the given job.
+// The stored job_id may be canonical 0x64hex (created by the demo) or the
+// raw decimal the front-end passed (resumed existing jobs) — match both.
 func (r *SessionRepo) GetByJobID(ctx context.Context, jobID string) (*model.DemoSession, error) {
+	candidates := []string{jobID}
+	if n, ok := new(big.Int).SetString(strings.TrimPrefix(jobID, "0x"), 16); ok {
+		candidates = append(candidates, n.String())
+	}
+	if n, ok := new(big.Int).SetString(jobID, 10); ok {
+		candidates = append(candidates, fmt.Sprintf("0x%064x", n))
+	}
 	var sess model.DemoSession
-	if err := r.db.WithContext(ctx).Where("job_id = ?", jobID).Order("created_at DESC").First(&sess).Error; err != nil {
+	if err := r.db.WithContext(ctx).
+		Where("job_id IN ?", candidates).
+		Order("created_at DESC").
+		First(&sess).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, nil
 		}

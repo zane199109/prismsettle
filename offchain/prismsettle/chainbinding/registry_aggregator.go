@@ -238,23 +238,15 @@ func (r *RegistryAggregatorBinding) GetScore(ctx context.Context, agentID *big.I
 // --- internal helpers ------------------------------------------------
 
 // listAgentIDs returns all agentIds (hex uint256) from the offchain
-// agent_registry table for the configured chain. Paginated.
+// agent_registry table for the configured chain.
 func (r *RegistryAggregatorBinding) listAgentIDs(ctx context.Context) ([]string, error) {
-	var ids []string
-	page := 1
-	size := 100
-	for {
-		records, total, err := r.agentDB.List(ctx, r.cfg.ChainName, page, size)
-		if err != nil {
-			return nil, err
-		}
-		for _, rec := range records {
-			ids = append(ids, rec.AgentID)
-		}
-		if int64(page*size) >= total {
-			break
-		}
-		page++
+	records, err := r.agentDB.List(ctx, r.cfg.ChainName)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(records))
+	for _, rec := range records {
+		ids = append(ids, rec.AgentID)
 	}
 	return ids, nil
 }

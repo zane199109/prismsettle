@@ -3,7 +3,9 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"strconv"
 	"strings"
@@ -170,6 +172,15 @@ func (h *PrismSettleHandler) getEvents(c *gin.Context) {
 	}
 
 	req.ContractAddr = strings.ToLower(req.ContractAddr)
+	// agentId arrives as a decimal uint256 from the detail page URL;
+	// chain_events stores the canonical 0x+64-hex form. Normalize.
+	if req.AgentID != "" {
+		req.AgentID = normalizeJobID(req.AgentID)
+		if req.AgentID == "" {
+			response.Fail(c, errno.ErrInvalidParam.Code, "invalid agentId")
+			return
+		}
+	}
 
 	start := time.Now()
 	events, total, err := h.svc.GetEvents(
@@ -355,7 +366,7 @@ func (h *PrismSettleHandler) listJobs(c *gin.Context) {
 
 // getJobStatus handles GET /api/v1/prismsettle/jobs/:jobId and /jobs/:jobId/status (FR-A09/A10).
 func (h *PrismSettleHandler) getJobStatus(c *gin.Context) {
-	jobID := c.Param("jobId")
+	jobID := normalizeJobID(c.Param("jobId"))
 	if jobID == "" {
 		response.Fail(c, errno.ErrInvalidParam.Code, "jobId is required")
 		return
@@ -381,7 +392,7 @@ func (h *PrismSettleHandler) getJobStatus(c *gin.Context) {
 
 // getJobTimeline handles GET /api/v1/prismsettle/jobs/:jobId/timeline (FR-JM02).
 func (h *PrismSettleHandler) getJobTimeline(c *gin.Context) {
-	jobID := c.Param("jobId")
+	jobID := normalizeJobID(c.Param("jobId"))
 	if jobID == "" {
 		response.Fail(c, errno.ErrInvalidParam.Code, "jobId is required")
 		return
@@ -401,6 +412,22 @@ func (h *PrismSettleHandler) getJobTimeline(c *gin.Context) {
 		"events": events,
 		"count":  len(events),
 	})
+}
+
+// normalizeJobID accepts a job id in 0x-hex or plain decimal form and returns
+// the canonical "0x" + 64-hex form stored in chain_events ("" on failure).
+// Lets URLs like /jobs/<decimal-uint256> resolve to the same timeline as
+// /jobs/<0x…> — the create-job flow redirects with the raw uint256.
+func normalizeJobID(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	n, ok := new(big.Int).SetString(raw, 0) // auto-detects 0x prefix
+	if !ok || n.Sign() < 0 {
+		return ""
+	}
+	return fmt.Sprintf("0x%064x", n)
 }
 
 // checkTrust handles GET /api/v1/prismsettle/trust (FR-A11).
@@ -456,6 +483,13 @@ func (h *PrismSettleHandler) getReputationHistory(c *gin.Context) {
 		req.Limit = 30
 	}
 	req.ContractAddr = strings.ToLower(req.ContractAddr)
+	// The detail page URL carries the agentId as a decimal uint256; chain_events
+	// stores the canonical 0x+64-hex form. Normalize so both resolve.
+	req.AgentID = normalizeJobID(req.AgentID)
+	if req.AgentID == "" {
+		response.Fail(c, errno.ErrInvalidParam.Code, "invalid agentId")
+		return
+	}
 	events, err := h.svc.GetReputationHistory(c.Request.Context(), req.ChainName, req.ContractAddr, req.AgentID, req.Limit)
 	if err != nil {
 		response.HandleError(c, err)

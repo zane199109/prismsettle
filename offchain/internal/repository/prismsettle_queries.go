@@ -153,6 +153,26 @@ func (r *ChainEventRepository) CountPrismValidations(
 	return total, nil
 }
 
+// CountCompletedJobs returns the number of PRISM_JOB_COMPLETED events where
+// the provider address matches the given wallet. Used to rank agents by
+// completed workload (tie-breaker after reputation score).
+func (r *ChainEventRepository) CountCompletedJobs(
+	ctx context.Context,
+	chainName, providerAddr string,
+) (int64, error) {
+	var total int64
+	query := r.db.WithContext(ctx).
+		Model(&model.ChainEvent{}).
+		Where("chain_name = ?", chainName).
+		Where("event_type = ?", model.TypePrismJobCompleted).
+		Where("LOWER(\"from\") = ?", strings.ToLower(providerAddr))
+	if err := query.Count(&total).Error; err != nil {
+		logger.Errorf("repo count completed jobs failed", logger.Error(err))
+		return 0, errno.ErrInternal
+	}
+	return total, nil
+}
+
 // prismJobEventTypes is the set of PrismSettleJob lifecycle event types.
 var prismJobEventTypes = []string{
 	string(model.TypePrismJobCreated),

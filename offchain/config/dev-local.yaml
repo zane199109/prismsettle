@@ -12,7 +12,7 @@ server:
   shutdown_httpserver_timeout: 20
 
 rate_limit:
-  per_minute: 120
+  per_minute: 600
   daily_limit: 100000
 
 auth:
@@ -133,6 +133,9 @@ evaluator:
   job_addr: "0xC1aC936f57B983381E08BA0417CC1999C04DC6aF"
   hook_addr: "0x9039554fc84deebB4923E4236390634371E853f9"
   payment_token: "0x83cb612C10a27C09b7a5Ab31B906560B880abD9C"
+  # Wrapped MON (WMON, WETH9-style deposit/withdraw) — alternative per-job
+  # token for the demo. Verified on-chain: symbol WMON, decimals 18.
+  wmon_token: "0xFb8bf4c1CC7a94c73D209a149eA2AbEa852BC541"
   # Demo: wait this long before executing the arbitration result. Must be >=
   # the on-chain announcementPeriod (deployed at 20s); 25s keeps the whole
   # arbitration scene inside the 3-minute window.

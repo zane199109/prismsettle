@@ -178,10 +178,6 @@ if [ -n "$EVALUATOR_ADDR" ]; then
   cast_checked "grantRole(REGISTRY_EVALUATOR_ROLE)" "$REGISTRY_ADDR" "grantRole(bytes32,address)" "$(cast keccak "REGISTRY_EVALUATOR_ROLE")" "$EVALUATOR_ADDR" \
     --private-key "$DEPLOYER_KEY_WITH_PREFIX" --rpc-url "$MONAD_RPC"
 
-  echo "  grantRole(COMMERCE_EVALUATOR_ROLE)..."
-  cast_checked "grantRole(COMMERCE_EVALUATOR_ROLE)" "$JOB_ADDR" "grantRole(bytes32,address)" "$(cast keccak "COMMERCE_EVALUATOR_ROLE")" "$EVALUATOR_ADDR" \
-    --private-key "$DEPLOYER_KEY_WITH_PREFIX" --rpc-url "$MONAD_RPC"
-
   echo "  grantRole(RESOLVER_ROLE)..."
   cast_checked "grantRole(RESOLVER_ROLE)" "$HOOK_ADDR" "grantRole(bytes32,address)" "$(cast keccak "RESOLVER_ROLE")" "$EVALUATOR_ADDR" \
     --private-key "$DEPLOYER_KEY_WITH_PREFIX" --rpc-url "$MONAD_RPC"

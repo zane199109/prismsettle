@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"math/big"
+	"sort"
 	"strings"
 	"sync"
 
@@ -174,15 +175,22 @@ func (s *PrismSettleService) CountValidations(
 // Phase 7 task 7.1: agent endpoints
 // -----------------------------------------------------------------------------
 
-// ListAgents returns paginated agents from agent_registry, enriched with the
-// latest aggregated score for each. FR-A06.
+// ListAgents returns agents ranked by reputation score (desc), tie-broken
+// by completed task count (desc), then paginated. FR-A06. Ranking happens
+// after score enrichment because scores are not stored in the DB.
 func (s *PrismSettleService) ListAgents(
 	ctx context.Context, chainName string, page, size int,
 ) ([]model.AgentVO, int64, error) {
 	if s.agentRepo == nil {
 		return nil, 0, errno.ErrInternal
 	}
-	recs, total, err := s.agentRepo.List(ctx, chainName, page, size)
+	if page < 1 {
+		page = 1
+	}
+	if size < 1 {
+		size = 20
+	}
+	recs, err := s.agentRepo.List(ctx, chainName)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -199,7 +207,57 @@ func (s *PrismSettleService) ListAgents(
 		})
 	}
 	s.enrichScores(ctx, chainName, recs, out)
-	return out, total, nil
+	s.enrichTaskCounts(ctx, chainName, out)
+
+	// Rank: reputation desc → completed tasks desc → agentId (deterministic).
+	sort.SliceStable(out, func(i, j int) bool {
+		if c := cmpScore(out[i].Score, out[j].Score); c != 0 {
+			return c > 0
+		}
+		if out[i].TaskCount != out[j].TaskCount {
+			return out[i].TaskCount > out[j].TaskCount
+		}
+		return out[i].AgentID < out[j].AgentID
+	})
+	total := int64(len(out))
+
+	lo := (page - 1) * size
+	if lo >= len(out) {
+		return []model.AgentVO{}, total, nil
+	}
+	hi := lo + size
+	if hi > len(out) {
+		hi = len(out)
+	}
+	return out[lo:hi], total, nil
+}
+
+// cmpScore compares two 1e18-scaled score strings numerically (-1/0/1).
+// Unparseable strings are treated as zero so bad rows never break ranking.
+func cmpScore(a, b string) int {
+	ai, aok := new(big.Int).SetString(a, 10)
+	bi, bok := new(big.Int).SetString(b, 10)
+	if !aok {
+		ai = big.NewInt(0)
+	}
+	if !bok {
+		bi = big.NewInt(0)
+	}
+	return ai.Cmp(bi)
+}
+
+// enrichTaskCounts fills each AgentVO's TaskCount with the number of
+// completed jobs whose provider is the agent's owner wallet.
+func (s *PrismSettleService) enrichTaskCounts(ctx context.Context, chainName string, out []model.AgentVO) {
+	for i := range out {
+		n, err := s.ceRepo.CountCompletedJobs(ctx, chainName, out[i].Owner)
+		if err != nil {
+			logger.Warn("count completed jobs failed",
+				logger.String("agent", out[i].AgentID), logger.Error(err))
+			continue
+		}
+		out[i].TaskCount = n
+	}
 }
 
 // enrichScores fills each AgentVO's Score: DB PRISM_AGGREGATED event first
@@ -278,6 +336,9 @@ func (s *PrismSettleService) GetAgent(
 		if live, err := s.scoreFetcher.FetchScore(ctx, rec.AgentID); err == nil {
 			vo.Score = live
 		}
+	}
+	if n, err := s.ceRepo.CountCompletedJobs(ctx, chainName, rec.Owner); err == nil {
+		vo.TaskCount = n
 	}
 	return vo, nil
 }

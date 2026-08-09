@@ -132,7 +132,9 @@ web3:
       native_decimals: 18
 
 evaluator:
-  private_key: "0d633a23c569763107254fb56e29c379cbae379b4ac697bed09af6eb5ba4f813"
+  # Local Anvil test key — NOT a real asset (chain 31337, localhost:8545).
+  # Kept empty here; set via env when running against a real chain.
+  private_key: ""
   evaluator_address: "0xcABFefeddd874AcABCc63bB1414194863a128250"
   chain_id: 31337
   chain_name: "monad_testnet"

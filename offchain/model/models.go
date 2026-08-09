@@ -383,6 +383,7 @@ type AgentVO struct {
 	Score        string `json:"score"`
 	RegisteredAt uint64 `json:"registered_at"`
 	BlockNumber  uint64 `json:"block_number"`
+	TaskCount    int64  `json:"task_count"` // completed jobs as provider
 }
 
 // TrustResultVO is the API view for GET /trust.
