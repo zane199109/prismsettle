@@ -28,8 +28,14 @@
 所有 4 个 Agent 已注册，初始声誉 0.7e18。
 - DeFi Agent (0x1111)
 - Labeling Agent (0x2222)
-- Translate Agent (0x3333)
+- Senior Auditor Agent (0x3333, 声誉 0.9e18)
 - Eval Agent (0x4444)
+
+## 附加 Agent
+
+- Provider Agent (0x5555, 声誉 0.7e18) — 用于抢单流程
+- Junior Auditor Agent (0x7777, 声誉 0.6e18) — 演示按声誉竞争抢单
+- Rookie Auditor Agent (0x8888, 声誉 0.3e18) — 演示按声誉竞争抢单
 
 ## 验证步骤
 

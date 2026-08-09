@@ -1,8 +1,8 @@
 # PrismSettle 全流程验证指南
 
-> 验证时间：2026-08-06 | 网络：Monad Testnet (chainId=10143)
+> 验证时间：2026-08-08 | 网络：Monad Testnet (chainId=10143)
 > 部署账户：`0x8EB3Fe3dDe56Cab0CDf32db3e6E5bA865596BE2C`
-> 更新：2026-08-06 — complete 新签名（Buyer 评分）+ source=3 变更点
+> 更新：2026-08-08 — 合约地址更新至最新部署 + complete 新签名（Buyer 评分）+ source=3 变更点
 
 > ⚠️ 重要前提：本指南对应**当前工作区合约代码**（`complete(uint256,uint96)` + Buyer 评分 source=3）。链上部署的合约版本如不包含这些函数，请先重新部署（见 `scripts/deploy_monad_testnet.sh`），否则下述 complete 步骤会 revert。
 
@@ -29,7 +29,7 @@
 
 ```bash
 # USDC 合约地址（MockERC20，decimals=18）
-USDC=0x252e44550f8B9997901e5540FC0E1dA52Ab099C6
+USDC=0x83cb612C10a27C09b7a5Ab31B906560B880abD9C
 
 # 给你的钱包 mint 1000 USDC（decimals=18，所以 1000e18 = 1000000000000000000000）
 # 替换 YOUR_WALLET 为你的钱包地址
@@ -42,12 +42,12 @@ cast send $USDC "mint(address,uint256)" YOUR_WALLET 1000000000000000000000 \
 
 ```bash
 # 检查 4 个官方 Agent 的声誉
-REGISTRY=0xA82937ad81e8aB775c9B32F363CE5E8564207739
+REGISTRY=0xe6Fb9e7788Ab7BCD1622485fb0F2dED9092C7A67
 cast call $REGISTRY "getScore(uint256)(uint256)" 0x1111 --rpc-url https://testnet-rpc.monad.xyz
 # 预期: 700000000000000000 (0.7e18)
 
 # 检查 Facilitator 地址
-JOB=0x4B09DB038dF842277f3f1aD4500b9BEDBFcB47cB
+JOB=0xC1aC936f57B983381E08BA0417CC1999C04DC6aF
 cast call $JOB "facilitator()(address)" --rpc-url https://testnet-rpc.monad.xyz
 # 预期: 0x7f6a2850669202519f0FE8aa912451238820Db86
 ```
@@ -100,10 +100,10 @@ curl -s -H "X-API-TOKEN: dev-token" \
 
 ```bash
 # 创建 Job（签名：createJob(uint256 agentId, uint256 parentJobId, uint64 deadline, address hook, uint96 minProviderReputation, address paymentToken)）
-JOB=0x4B09DB038dF842277f3f1aD4500b9BEDBFcB47cB
-REGISTRY=0xA82937ad81e8aB775c9B32F363CE5E8564207739
-HOOK=0x740c2969e537706A4f4757166e5eBEeD0E4DAD15
-BUYER_KEY=5138c7d2e167ec1039616451b01a5b2a5644c138d271843a84961ab2f6c9227b
+JOB=0xC1aC936f57B983381E08BA0417CC1999C04DC6aF
+REGISTRY=0xe6Fb9e7788Ab7BCD1622485fb0F2dED9092C7A67
+HOOK=0x9039554fc84deebB4923E4236390634371E853f9
+BUYER_KEY=<你的 buyer 私钥 — 从 .env 的 BUYER_KEY 读取，勿提交真实值>
 
 # agentId=0x1111, parentJobId=0, deadline=1小时后, hook=ArbitrationHook, minProviderReputation=0.5e18,
 # paymentToken=0x0（合约默认 USDC）；传 WMON 地址则 escrow 用 WMON
@@ -178,7 +178,7 @@ cast call $REGISTRY "getScore(uint256)(uint256)" 0x8888 --rpc-url https://testne
 
 ```bash
 # 使用 Provider 私钥抢单
-PROVIDER_KEY=3336f7ede5e02528e96cb43308c8b784c512889d0788cf6215a1e8bde827d65d
+PROVIDER_KEY=<你的 provider 私钥 — 从 .env 读取（如 AUDITOR_SENIOR_KEY），勿提交真实值>
 
 cast send $JOB "grabJob(uint256,uint256)" $JOB_ID 0x3333 \
   --rpc-url https://testnet-rpc.monad.xyz \
@@ -297,7 +297,7 @@ TX=$(cast send $JOB "createJob(uint256,uint256,uint64,address,uint96,address)" \
 JOB_ID=$(echo "$TX" | jq -r '.logs[0].topics[2]')  # JobCreated indexed jobId
 
 # 2. 托管资金（ERC-20 兜底路径，100 USDC @ 18 decimals）
-USDC=0x252e44550f8B9997901e5540FC0E1dA52Ab099C6
+USDC=0x83cb612C10a27C09b7a5Ab31B906560B880abD9C
 cast send $USDC "approve(address,uint256)" $JOB 100000000000000000000 \
   --rpc-url https://testnet-rpc.monad.xyz --private-key $BUYER_KEY
 cast send $JOB "fundViaToken(uint256,uint256,bytes)" $JOB_ID 100000000000000000000 0x \
@@ -389,10 +389,10 @@ docker compose logs -f agent-auditor-senior
 
 ```bash
 # 确认当前部署的合约地址
-echo "Token: 0x252e44550f8B9997901e5540FC0E1dA52Ab099C6"
-echo "Registry: 0xA82937ad81e8aB775c9B32F363CE5E8564207739"
-echo "Hook: 0x740c2969e537706A4f4757166e5eBEeD0E4DAD15"
-echo "Job: 0x4B09DB038dF842277f3f1aD4500b9BEDBFcB47cB"
+echo "Token: 0x83cb612C10a27C09b7a5Ab31B906560B880abD9C"
+echo "Registry: 0xe6Fb9e7788Ab7BCD1622485fb0F2dED9092C7A67"
+echo "Hook: 0x9039554fc84deebB4923E4236390634371E853f9"
+echo "Job: 0xC1aC936f57B983381E08BA0417CC1999C04DC6aF"
 echo "Facilitator: 0x7f6a2850669202519f0FE8aa912451238820Db86"
 ```
 
@@ -402,8 +402,8 @@ echo "Facilitator: 0x7f6a2850669202519f0FE8aa912451238820Db86"
 
 | 合约 | 地址 | 浏览器 |
 |------|------|--------|
-| MockERC20 (USDC) | `0x252e44550f8B9997901e5540FC0E1dA52Ab099C6` | [查看](https://testnet.monadexplorer.com/address/0x252e44550f8B9997901e5540FC0E1dA52Ab099C6) |
-| PrismSettleRegistry | `0xA82937ad81e8aB775c9B32F363CE5E8564207739` | [查看](https://testnet.monadexplorer.com/address/0xA82937ad81e8aB775c9B32F363CE5E8564207739) |
-| ArbitrationHook | `0x740c2969e537706A4f4757166e5eBEeD0E4DAD15` | [查看](https://testnet.monadexplorer.com/address/0x740c2969e537706A4f4757166e5eBEeD0E4DAD15) |
-| PrismSettleJob | `0x4B09DB038dF842277f3f1aD4500b9BEDBFcB47cB` | [查看](https://testnet.monadexplorer.com/address/0x4B09DB038dF842277f3f1aD4500b9BEDBFcB47cB) |
+| MockERC20 (USDC) | `0x83cb612C10a27C09b7a5Ab31B906560B880abD9C` | [查看](https://testnet.monadexplorer.com/address/0x83cb612C10a27C09b7a5Ab31B906560B880abD9C) |
+| PrismSettleRegistry | `0xe6Fb9e7788Ab7BCD1622485fb0F2dED9092C7A67` | [查看](https://testnet.monadexplorer.com/address/0xe6Fb9e7788Ab7BCD1622485fb0F2dED9092C7A67) |
+| ArbitrationHook | `0x9039554fc84deebB4923E4236390634371E853f9` | [查看](https://testnet.monadexplorer.com/address/0x9039554fc84deebB4923E4236390634371E853f9) |
+| PrismSettleJob | `0xC1aC936f57B983381E08BA0417CC1999C04DC6aF` | [查看](https://testnet.monadexplorer.com/address/0xC1aC936f57B983381E08BA0417CC1999C04DC6aF) |
 | x402 Facilitator | `0x7f6a2850669202519f0FE8aa912451238820Db86` | [查看](https://testnet.monadexplorer.com/address/0x7f6a2850669202519f0FE8aa912451238820Db86) |
