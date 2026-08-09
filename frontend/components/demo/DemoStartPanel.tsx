@@ -4,11 +4,11 @@
 // demo. Fills in the job title/description/amount/agent, then the orchestrator
 // takes over (fund → grab → submit → reject loop → arbitration → settle).
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Play, Sparkles, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { PAYMENT_TOKEN_ADDRESS } from "@/lib/contracts";
+import { PAYMENT_TOKEN_ADDRESS, WMON_ADDRESS } from "@/lib/contracts";
 import { cn } from "@/lib/utils";
 
 const AGENT_OPTIONS = [
@@ -17,22 +17,49 @@ const AGENT_OPTIONS = [
   { value: "rookie", label: "Rookie Auditor (0.70)" },
 ];
 
+const CURRENCIES = [
+  { value: "usdc", label: "USDC" },
+  { value: "mon", label: "MON" },
+] as const;
+
 export function DemoStartPanel({
   onStart,
   busy,
   error,
+  defaultAmount,
+  defaultToken,
 }: {
-  onStart: (params: { title: string; description: string; amount: string; provider_agent: string; scenario: string }) => Promise<void>;
+  onStart: (params: {
+    title: string;
+    description: string;
+    amount: string;
+    token: string;
+    provider_agent: string;
+    scenario: string;
+  }) => Promise<void>;
   busy: boolean;
   error: string | null;
+  // Prefill from the job's real escrow (FUNDED event) when available —
+  // the demo then mirrors the task the user actually created.
+  defaultAmount?: string;
+  defaultToken?: "usdc" | "mon";
 }) {
   const [title, setTitle] = useState("智能合约安全审计");
   const [description, setDescription] = useState("检查重入漏洞、权限控制与 gas 优化，输出审计报告");
-  const [amount, setAmount] = useState("5");
+  const [amount, setAmount] = useState(defaultAmount ?? "5");
+  const [currency, setCurrency] = useState<"usdc" | "mon">(defaultToken ?? "usdc");
   const [agent, setAgent] = useState("senior");
   const [scenario, setScenario] = useState<"arbitration" | "direct">("arbitration");
 
-  const canStart = title.trim() && Number(amount) > 0 && !busy && Boolean(PAYMENT_TOKEN_ADDRESS);
+  // Sync when the parent learns the job's real escrow amount/currency
+  // (the timeline loads asynchronously after mount).
+  useEffect(() => {
+    if (defaultAmount !== undefined && defaultAmount !== "") setAmount(defaultAmount);
+    if (defaultToken) setCurrency(defaultToken);
+  }, [defaultAmount, defaultToken]);
+
+  const canStart =
+    title.trim() && Number(amount) > 0 && !busy && Boolean(PAYMENT_TOKEN_ADDRESS);
 
   return (
     <div className="rounded-xl border border-white/10 bg-prism-surface/40 p-5">
@@ -55,14 +82,33 @@ export function DemoStartPanel({
           />
         </label>
         <label className="block">
-          <span className="mb-1 block text-xs text-white/50">金额 (USDC)</span>
-          <Input
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            type="number"
-            min="1"
-            className="bg-black/30 border-white/10"
-          />
+          <span className="mb-1 block text-xs text-white/50">金额 + 币种</span>
+          <div className="flex gap-2">
+            <Input
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              type="number"
+              min="1"
+              className="flex-1 bg-black/30 border-white/10"
+            />
+            <div className="flex shrink-0 gap-1">
+              {CURRENCIES.map((c) => (
+                <button
+                  key={c.value}
+                  type="button"
+                  onClick={() => setCurrency(c.value)}
+                  className={cn(
+                    "rounded-lg border px-3 py-1.5 text-xs transition-colors",
+                    currency === c.value
+                      ? "border-prism-accent/60 bg-prism-accent/15 text-prism-accent"
+                      : "border-white/10 bg-black/20 text-white/50 hover:border-white/25",
+                  )}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
+          </div>
         </label>
         <label className="block sm:col-span-2">
           <span className="mb-1 block text-xs text-white/50">任务描述</span>
@@ -137,6 +183,7 @@ export function DemoStartPanel({
               title: title.trim(),
               description: description.trim(),
               amount: String(Math.round(Number(amount) * 1e18)),
+              token: currency === "mon" ? WMON_ADDRESS : (PAYMENT_TOKEN_ADDRESS as string),
               provider_agent: agent,
               scenario,
             })
@@ -148,8 +195,8 @@ export function DemoStartPanel({
         </Button>
         <span className="text-[11px] text-white/30">
           {scenario === "arbitration"
-            ? "将创建真实链上任务并自动走完 打回×2 → 仲裁 → 结算"
-            : "将创建真实链上任务并自动走完 交付 → 验收 → 结算（无争议）"}
+            ? "将基于当前任务自动推进（不新建）：抢单 → 交付 → 打回×2 → 仲裁 → 结算"
+            : "将基于当前任务自动推进（不新建）：抢单 → 交付 → 验收 → 结算"}
         </span>
       </div>
     </div>

@@ -23,6 +23,8 @@ export function useDemoSession() {
     title: string;
     description?: string;
     amount: string;
+    token?: string;
+    job_id?: string;
     provider_agent?: string;
     scenario?: string;
   }) => {

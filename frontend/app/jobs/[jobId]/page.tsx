@@ -15,7 +15,7 @@ import { useSearchParams } from "next/navigation";
 import { ArrowLeft, Loader2, Gavel, FileUp, CheckCircle2, XCircle, Undo2 } from "lucide-react";
 import { useAccount, useWriteContract, useWaitForTransactionReceipt, useReadContract } from "wagmi";
 import { monadTestnet } from "wagmi/chains";
-import { keccak256, toHex } from "viem";
+import { keccak256, toHex, formatUnits } from "viem";
 
 import { JobStatusTracker } from "@/components/job/JobStatusTracker";
 import { JobEventTimeline } from "@/components/job/JobEventTimeline";
@@ -27,6 +27,7 @@ import { FundingPathBadge } from "@/components/job/FundingPathBadge";
 import { useJobStatusPoll } from "@/hooks/useJobStatusPoll";
 import { useJobTimeline } from "@/hooks/useJobTimeline";
 import { useEvents } from "@/hooks/useEvents";
+import { formatScore } from "@/lib/utils";
 import {
   JOB_CONTRACT_ADDRESS,
   JOB_ABI,
@@ -52,6 +53,17 @@ function JobDetailBody({ jobId }: { jobId: string }) {
   const { status, isTerminal } = useJobStatusPoll(jobId);
   const { timeline } = useJobTimeline(jobId);
 
+  // Escrow amount + currency from the FUNDED event — the real values the
+  // task was created with (shown in the header + prefilled in the demo).
+  const funded = timeline.find((t) => t.status === "Funded");
+  const jobAmountHuman =
+    funded?.value !== undefined && funded.value !== ""
+      ? formatUnits(BigInt(funded.value), 18)
+      : undefined;
+  const jobCurrency: "usdc" | "mon" | undefined =
+    funded?.symbol === "WMON" ? "mon" : funded?.symbol ? "usdc" : undefined;
+  const jobSymbol = funded?.symbol === "WMON" ? "WMON" : "USDC";
+
   // Read on-chain ruling from resolved dispute events (FR-JM06).
   const { events: disputeEvents } = useEvents({
     eventType: "PRISM_DISPUTE_RESOLVED",
@@ -60,6 +72,21 @@ function JobDetailBody({ jobId }: { jobId: string }) {
     intervalMs: 15000,
   });
   const resolvedRuling = disputeEvents.length > 0 ? disputeEvents[0].value : null;
+
+  // Buyer's rating for THIS job: VALIDATION_SUBMITTED events carry the job_id
+  // they rated (the score the buyer agent gave after reviewing the deliverable).
+  const { events: ratingEvents } = useEvents({
+    eventType: "PRISM_VALIDATION_SUBMITTED",
+    size: 50,
+    intervalMs: 15000,
+  });
+  let jobIdHex = jobId;
+  try {
+    jobIdHex = "0x" + BigInt(jobId).toString(16).padStart(64, "0");
+  } catch {
+    // already 0x hex or non-numeric — compare as-is
+  }
+  const jobRating = ratingEvents.find((e) => e.job_id === jobIdHex)?.value ?? null;
 
   const canSubmit = status === "Funded" || status === "Assigned" || status === "Submitted"; // resubmission after reject
   const canDispute = status === "Submitted";
@@ -94,6 +121,20 @@ function JobDetailBody({ jobId }: { jobId: string }) {
                 </span>
               )}
             </p>
+            {jobAmountHuman !== undefined && (
+              <p className="mt-1 text-sm text-white/60">
+                escrow:{" "}
+                <span className="font-mono text-white">
+                  {jobAmountHuman} {jobSymbol}
+                </span>
+              </p>
+            )}
+            {jobRating !== null && (
+              <p className="mt-1 text-sm text-white/60">
+                buyer rating:{" "}
+                <span className="font-mono text-prism-accent">{formatScore(jobRating)}</span>
+              </p>
+            )}
           </div>
           <FundingPathBadge jobContractAddress={JOB_CONTRACT_ADDRESS} rpcUrl={process.env.NEXT_PUBLIC_RPC_URL} />
         </div>
@@ -112,7 +153,7 @@ function JobDetailBody({ jobId }: { jobId: string }) {
         {/* Chat-style live collaboration demo (live while it runs, replay
             afterwards) — shown BEFORE the on-chain timeline so the flow is
             read top-down: conversation first, chain events below */}
-        <DemoSection demo={demo} jobId={jobId} />
+        <DemoSection demo={demo} jobId={jobId} defaultAmount={jobAmountHuman} defaultToken={jobCurrency} />
 
         {/* Full lifecycle event stream (submit / reject / dispute / arbitration) —
             appears step-by-step as blocks sync during the demo */}
@@ -139,7 +180,19 @@ function JobDetailBody({ jobId }: { jobId: string }) {
 // DemoSection — chat-style collaboration demo. On mount it loads the most
 // recent demo session for this job (history view); without one it shows the
 // start panel. Shares the session state with the top Status Tracker.
-function DemoSection({ demo, jobId }: { demo: ReturnType<typeof useDemoSession>; jobId: string }) {
+function DemoSection({
+  demo,
+  jobId,
+  defaultAmount,
+  defaultToken,
+}: {
+  demo: ReturnType<typeof useDemoSession>;
+  jobId: string;
+  // Real escrow amount/currency of this job (from the FUNDED event) —
+  // prefilled so the demo mirrors the task the user created.
+  defaultAmount?: string;
+  defaultToken?: "usdc" | "mon";
+}) {
   const { sessionId, session, messages, creating, createError, start, loadByJob, reset } = demo;
   const [started, setStarted] = useState(false);
 
@@ -149,14 +202,18 @@ function DemoSection({ demo, jobId }: { demo: ReturnType<typeof useDemoSession>;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
+  // The demo drives THIS job (the orchestrator resumes it instead of
+  // creating a new one), so the status tracker, escrow and the
+  // full-lifecycle timeline all stay on the same task.
   const handleStart = async (p: {
     title: string;
     description: string;
     amount: string;
+    token?: string;
     provider_agent: string;
     scenario: string;
   }) => {
-    const id = await start(p);
+    const id = await start({ ...p, job_id: jobId });
     if (id) setStarted(true);
   };
 
@@ -166,7 +223,13 @@ function DemoSection({ demo, jobId }: { demo: ReturnType<typeof useDemoSession>;
   return (
     <div className="space-y-3">
       {!started && !hasSession ? (
-        <DemoStartPanel onStart={handleStart} busy={creating} error={createError} />
+        <DemoStartPanel
+          onStart={handleStart}
+          busy={creating}
+          error={createError}
+          defaultAmount={defaultAmount}
+          defaultToken={defaultToken}
+        />
       ) : (
         <>
           <div className="flex items-center justify-between">

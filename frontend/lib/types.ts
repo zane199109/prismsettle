@@ -10,6 +10,7 @@ export interface AgentVO {
   registered_at: number;
   block_number: number;
   score: string; // decimal string (uint256 scaled)
+  task_count?: number; // completed jobs as provider (ranking tie-breaker)
 }
 
 export interface JobVO {
@@ -44,6 +45,11 @@ export interface JobTimelineItem {
   tx_hash: string;
   block_number: number;
   timestamp: number;
+  // Escrow amount (wei) + payment token info — present on the FUNDED
+  // event; used by the detail page to show the job's real amount/currency.
+  value?: string;
+  token_address?: string;
+  symbol?: string;
 }
 
 export interface TrustCheckResult {
@@ -83,6 +89,7 @@ export interface ChainEvent {
   block_number: number;
   block_time: number;
   extra: string;
+  job_id?: string; // job-scoped events carry the linked job (0x hex)
 }
 
 export interface ValidationCount {

@@ -45,15 +45,35 @@ export function useJobTimeline(
     enabled ? `job-timeline:${chainName ?? "all"}:${jobId}` : null,
     async () => {
       const res = await getJobTimeline(jobId!, chainName);
-      // Backend returns {job_id, events: ChainEvent[], count}; project each
-      // event to the JobTimelineItem shape (status = display state).
       const events = res?.events ?? [];
-      return events.map((e) => ({
-        status: timelineStatus(e.event_type),
-        tx_hash: e.tx_hash,
-        block_number: e.block_number,
-        timestamp: e.block_time,
-      }));
+      // Dedupe by tx: one action = one transaction = one row. Some actions
+      // emit the same event from two contracts (e.g. resolveDispute emits
+      // DisputeResolved from the Hook AND DisputeResolvedAnnounced from the
+      // Job contract in the same tx) — showing both would duplicate the row.
+      const seen = new Set<string>();
+      const items: {
+        status: string;
+        tx_hash: string;
+        block_number: number;
+        timestamp: number;
+        value?: string;
+        token_address?: string;
+        symbol?: string;
+      }[] = [];
+      for (const e of events) {
+        if (seen.has(e.tx_hash)) continue;
+        seen.add(e.tx_hash);
+        items.push({
+          status: timelineStatus(e.event_type),
+          tx_hash: e.tx_hash,
+          block_number: e.block_number,
+          timestamp: e.block_time,
+          value: e.value,
+          token_address: e.token_address,
+          symbol: e.symbol,
+        });
+      }
+      return items;
     },
     { intervalMs, pauseWhenHidden: true },
   );

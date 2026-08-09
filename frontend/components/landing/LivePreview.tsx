@@ -95,7 +95,7 @@ export function LivePreview() {
                         <Card className="border-white/10 bg-prism-surface/40 hover:border-prism-accent/40 hover:bg-prism-surface/70 transition-colors">
                           <CardContent className="flex items-center gap-4 p-4">
                             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-prism-accent/15 font-mono text-sm font-bold text-prism-accent">
-                              #{i + 1}
+                              {i + 1}
                             </div>
                             <div className="min-w-0 flex-1">
                               <div className="truncate font-mono text-sm text-white">
@@ -103,6 +103,9 @@ export function LivePreview() {
                               </div>
                               <div className="mt-0.5 text-xs text-white/40">
                                 score {formatScore(agent.score)}
+                                {typeof agent.task_count === "number" && (
+                                  <span> · {agent.task_count} tasks</span>
+                                )}
                               </div>
                             </div>
                             <Badge

@@ -11,9 +11,9 @@ import { Badge } from "@/components/ui/badge";
 
 import { ShardHeatmap } from "@/components/dashboard/ShardHeatmap";
 import { ScoreHistoryChart } from "@/components/agent/ScoreHistoryChart";
+import { ReputationChanges } from "@/components/agent/ReputationChanges";
 import { AgentFailureCounterUI } from "@/components/agent/AgentFailureCounterUI";
 import { AgentInvokeBox } from "@/components/agent/AgentInvokeBox";
-import { ValidatorReviews } from "@/components/agent/ValidatorReviews";
 import { useAgentDetail } from "@/hooks/useAgentDetail";
 import { useReputationHistory } from "@/hooks/useReputationHistory";
 import {
@@ -38,7 +38,7 @@ export default function AgentDetailPage({ params }: PageProps) {
 }
 
 function AgentDetailBody({ agentId }: { agentId: string }) {
-  const { agent, isValidating } = useAgentDetail(agentId);
+  const { agent, isValidating, error: agentError } = useAgentDetail(agentId);
   const { points } = useReputationHistory(agentId, { size: 50 });
 
   const grade = gradeFromScore(agent?.score ?? "0");
@@ -68,7 +68,16 @@ function AgentDetailBody({ agentId }: { agentId: string }) {
           <div className="h-48 animate-pulse rounded-xl border border-white/10 bg-prism-surface/40" />
         ) : !agent ? (
           <div className="rounded-xl border border-dashed border-white/20 py-16 text-center text-sm text-white/60">
-            Agent not found: <code className="text-white">{agentId}</code>
+            {agentError ? (
+              <>
+                Failed to load agent — the API may be rate-limited or busy.
+                <div className="mt-2 text-xs text-white/30">Retrying automatically…</div>
+              </>
+            ) : (
+              <>
+                Agent not found: <code className="text-white">{agentId}</code>
+              </>
+            )}
           </div>
         ) : (
           <>
@@ -156,6 +165,12 @@ function AgentDetailBody({ agentId }: { agentId: string }) {
             <section className="mt-6 grid gap-6 lg:grid-cols-2">
               <div className="rounded-xl border border-white/10 bg-prism-surface/40 p-5">
                 <h2 className="mb-3 text-sm font-medium text-white">Reputation History</h2>
+                <div className="mb-3 flex items-baseline gap-3">
+                  <span className="font-mono text-3xl font-bold text-prism-accent">
+                    {score}
+                  </span>
+                  <span className="text-xs text-white/40">final reputation score</span>
+                </div>
                 <ScoreHistoryChart points={points} />
               </div>
               <div className="rounded-xl border border-white/10 bg-prism-surface/40 p-5">
@@ -164,9 +179,10 @@ function AgentDetailBody({ agentId }: { agentId: string }) {
               </div>
             </section>
 
-            {/* Validator reviews — P1-2 (FR-M03). Full-width below charts. */}
+            {/* Reputation changes — every modification bound to its job
+                (click through to the job detail). Full-width below charts. */}
             <section className="mt-6">
-              <ValidatorReviews agentId={agentId} limit={8} />
+              <ReputationChanges agentId={agentId} limit={8} />
             </section>
 
             {/* Failure counter + one-click invoke (FR-M04) */}

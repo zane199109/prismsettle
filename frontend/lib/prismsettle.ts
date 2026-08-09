@@ -128,6 +128,7 @@ export function createDemoSession(body: {
   description?: string;
   amount: string;
   token?: string;
+  job_id?: string;
   provider_agent?: string;
   scenario?: string;
 }) {

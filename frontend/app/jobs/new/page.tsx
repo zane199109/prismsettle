@@ -69,6 +69,12 @@ function NewJobBody() {
   const [error, setError] = useState<string | null>(null);
   const [stepLabel, setStepLabel] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<`0x${string}` | null>(null);
+  // Whole-flow lock: the three writes (createJob → approve → fundViaToken)
+  // must run as one atomic user flow. isWriting/isConfirming only cover the
+  // individual write/confirm phases, so the submit button can briefly become
+  // re-enabled BETWEEN steps — a second click would re-run the flow and fund
+  // an already-Funded job (revert "PrismSettle: bad state").
+  const [submitting, setSubmitting] = useState(false);
   const [nlInput, setNlInput] = useState(
     "帮我创建 5 USDC 的智能合约安全审计任务给审计 agent，1 天内完成，最低信誉 0.5",
   );
@@ -177,9 +183,11 @@ function NewJobBody() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (submitting) return; // never re-enter mid-flow (see submitting comment)
     if (blocked || !address || !JOB_CONTRACT_ADDRESS || (currency === "usdc" && !PAYMENT_TOKEN_ADDRESS)) return;
     setError(null);
     setTxHash(null);
+    setSubmitting(true);
 
     if (amountBig < 0n) {
       setError("Invalid amount (use e.g. 100).");
@@ -249,22 +257,22 @@ function NewJobBody() {
         return;
       }
 
-      // Step 2: approve if needed
-      if (needsApprove) {
-        setStepLabel("Step 2/3: Approving ERC-20 transfer…");
-        setTxHash(null);
-        const approveHash = await writeContractAsync({
-          address: erc20Address!,
-          abi: ERC20_ABI,
-          functionName: "approve",
-          args: [JOB_CONTRACT_ADDRESS, amountBig],
-          chainId: monadTestnet.id,
-        });
-        setTxHash(approveHash);
-        await waitForReceipt(approveHash);
-      } else {
-        setStepLabel("Step 2/3: Allowance sufficient, skipping approve…");
-      }
+      // Step 2: approve — ALWAYS approve instead of trusting a cached
+      // allowance read. The allowance (buyer → job contract) is consumed by
+      // every transferFrom; a stale read (e.g. a previous job's fund already
+      // spent it) makes the following fundViaToken revert with
+      // ERC20InsufficientAllowance. Approve is idempotent and cheap.
+      setStepLabel("Step 2/3: Approving ERC-20 transfer…");
+      setTxHash(null);
+      const approveHash = await writeContractAsync({
+        address: erc20Address!,
+        abi: ERC20_ABI,
+        functionName: "approve",
+        args: [JOB_CONTRACT_ADDRESS, amountBig],
+        chainId: monadTestnet.id,
+      });
+      setTxHash(approveHash);
+      await waitForReceipt(approveHash);
 
       // Step 3: fundViaToken (empty receipt = ERC-20 path)
       setStepLabel("Step 3/3: Funding job…");
@@ -280,10 +288,12 @@ function NewJobBody() {
       await waitForReceipt(fundHash);
 
       setStepLabel(null);
+      setSubmitting(false);
       router.push(`/jobs/${jobId.toString()}?agent=${encodeURIComponent(agentId)}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setStepLabel(null);
+      setSubmitting(false);
     }
   }
 
@@ -510,7 +520,7 @@ function NewJobBody() {
           <div className="flex items-center gap-3">
             <button
               type="submit"
-              disabled={blocked || isWriting || isConfirming || !address || !agentId || !amount || !ready || !!wrongChain}
+              disabled={blocked || isWriting || isConfirming || submitting || !address || !agentId || !amount || !ready || !!wrongChain}
               className="inline-flex items-center gap-2 rounded-lg bg-prism-accent px-5 py-2.5 text-sm font-semibold text-white hover:bg-prism-accent/80 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {isWriting || isConfirming ? (

@@ -55,6 +55,9 @@ export function AgentLeaderboard({ chainName, limit = 5 }: AgentLeaderboardProps
                 </div>
                 <div className="text-[10px] text-white/40">
                   {agent.endpoint || "no endpoint"}
+                  {typeof agent.task_count === "number" && (
+                    <span> · {agent.task_count} tasks</span>
+                  )}
                 </div>
               </div>
               <div className="text-right">
